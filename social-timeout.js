@@ -11,17 +11,44 @@
 
 // eslint-disable-next-line no-unused-vars
 function checkSocialTimeout(rtdb, uid, onClear) {
-    var timeoutRef = rtdb.ref('social_timeouts/' + uid);
+    var CACHE_KEY = 'sto_clear';      // "no timeout" cache
+    var OFFSET_KEY = 'sto_offset';    // server time offset cache
+    var CACHE_TTL = 5 * 60 * 1000;   // 5 minutes — bans propagate within this window
+    var OFFSET_TTL = 60 * 60 * 1000; // 1 hour — server offset is stable
 
-    // Get server time offset first to prevent clock manipulation
-    rtdb.ref('.info/serverTimeOffset').once('value').then(function (offsetSnap) {
-        var serverOffset = offsetSnap.val() || 0;
+    // Fast path: cached "no timeout" result for this user
+    try {
+        var cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+        if (cached && cached.uid === uid && (Date.now() - cached.t < CACHE_TTL)) {
+            onClear();
+            return;
+        }
+    } catch (e) {}
 
-        timeoutRef.once('value').then(function (snap) {
+    // Try cached server time offset to avoid that RTDB read
+    var cachedOffset = null;
+    try {
+        var offsetData = JSON.parse(localStorage.getItem(OFFSET_KEY) || 'null');
+        if (offsetData && (Date.now() - offsetData.t < OFFSET_TTL)) {
+            cachedOffset = offsetData.v;
+        }
+    } catch (e) {}
+
+    var getOffset = (cachedOffset !== null)
+        ? Promise.resolve(cachedOffset)
+        : rtdb.ref('.info/serverTimeOffset').once('value').then(function (snap) {
+            var offset = snap.val() || 0;
+            try { localStorage.setItem(OFFSET_KEY, JSON.stringify({ v: offset, t: Date.now() })); } catch (e) {}
+            return offset;
+        });
+
+    getOffset.then(function (serverOffset) {
+        rtdb.ref('social_timeouts/' + uid).once('value').then(function (snap) {
             var data = snap.val();
 
-            // No timeout set for this user
+            // No timeout set for this user — cache and proceed
             if (!data || !data.reason || !data.durationHours) {
+                try { localStorage.setItem(CACHE_KEY, JSON.stringify({ uid: uid, t: Date.now() })); } catch (e) {}
                 onClear();
                 return;
             }
