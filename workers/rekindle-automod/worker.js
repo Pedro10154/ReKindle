@@ -755,7 +755,8 @@ async function doTimeout(idToken, uid, hours, reason) {
     }
     await rtdbPut(idToken, `social_timeouts/${uid}`, {
         reason: `[Automod] ${reason}`,
-        durationHours: hours
+        durationHours: hours,
+        createdAt: { '.sv': 'timestamp' },
     });
     await rtdbDelete(idToken, `users_private/${uid}/timeout_seen`);
 }
@@ -796,7 +797,8 @@ async function doFullNuke(idToken, oauth2Token, uid, username, reason, ipBan = f
     // 1. Permanent social timeout
     await rtdbPut(idToken, `social_timeouts/${uid}`, {
         reason: `[Automod] ${reason}`,
-        durationHours: 999999
+        durationHours: 999999,
+        createdAt: { '.sv': 'timestamp' },
     });
     await rtdbDelete(idToken, `users_private/${uid}/timeout_seen`);
 

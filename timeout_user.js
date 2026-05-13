@@ -114,7 +114,8 @@ async function main() {
             // Set the timeout
             await rtdb.ref('social_timeouts/' + user.uid).set({
                 reason: REASON,
-                durationHours: HOURS
+                durationHours: HOURS,
+                createdAt: admin.database.ServerValue.TIMESTAMP,
             });
             // Clear any previous seenAt so the countdown starts fresh
             await rtdb.ref('users_private/' + user.uid + '/timeout_seen').remove();
