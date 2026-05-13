@@ -2697,27 +2697,6 @@
                     generalDomMsgCount++;
                     if (nearBottom) history.scrollTop = history.scrollHeight;
 
-                    // Trim DOM to prevent unbounded growth over long sessions.
-                    // Uses a counter instead of querySelectorAll to avoid DOM scans on Kindle.
-                    var MAX_GENERAL_DOM_MSGS = 80;
-                    if (generalDomMsgCount > MAX_GENERAL_DOM_MSGS) {
-                        var toRemove = generalDomMsgCount - MAX_GENERAL_DOM_MSGS;
-                        for (var ri = 0; ri < toRemove; ri++) {
-                            var oldestEl = history.querySelector('.msg');
-                            if (!oldestEl) break;
-                            var oldId = oldestEl.dataset.msgId;
-                            if (oldId) delete renderedKindlechatIds[oldId];
-                            history.removeChild(oldestEl);
-                            generalDomMsgCount--;
-                        }
-                        // Reset pagination anchor to the new oldest visible message so
-                        // scroll-up correctly loads the messages we just trimmed.
-                        var newOldestEl = history.querySelector('.msg');
-                        if (newOldestEl && newOldestEl.dataset.ts) {
-                            oldestGeneralTimestamp = parseInt(newOldestEl.dataset.ts) || oldestGeneralTimestamp;
-                            noMoreGeneralMessages = false;
-                        }
-                    }
                 };
                 generalListener.on('child_added', kcAddedHandler);
 
@@ -2729,13 +2708,26 @@
                 };
                 generalListener.on('child_changed', kcChangedHandler);
 
-                // Genuine deletes — bare ref so window-slide doesn't fire here.
                 kcDeleteHandler = function (childSnap) {
                     if (currentRoomId !== 'general') return;
                     if (!renderedKindlechatIds[childSnap.key]) return;
                     delete renderedKindlechatIds[childSnap.key];
                     var msgEl = history.querySelector('.msg[data-msg-id="' + childSnap.key + '"]');
-                    if (msgEl && msgEl.parentNode) msgEl.parentNode.removeChild(msgEl);
+                    if (msgEl && msgEl.parentNode) {
+                        // Only compensate scrollTop if the element was already scrolled
+                        // above the visible area (i.e. its bottom is above the container top).
+                        // Elements at or below the viewport need no adjustment.
+                        var containerTop = history.getBoundingClientRect().top;
+                        var elementBottom = msgEl.getBoundingClientRect().bottom;
+                        var isAboveViewport = elementBottom < containerTop;
+                        var savedScrollTop = history.scrollTop;
+                        var savedScrollHeight = history.scrollHeight;
+                        msgEl.parentNode.removeChild(msgEl);
+                        if (isAboveViewport) {
+                            var removed = savedScrollHeight - history.scrollHeight;
+                            history.scrollTop = Math.max(0, savedScrollTop - removed);
+                        }
+                    }
                 };
                 // child_removed on the scoped query — NOT the bare ref.
                 // A bare-ref listener would force Firebase to sync the entire
