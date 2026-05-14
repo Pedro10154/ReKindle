@@ -748,6 +748,24 @@
                             </svg>
                             <span class="btn-label" data-i18n="pixel.tool.clear">Clear</span>
                         </button>
+                        <button id="tool-undo" class="sys-btn" onclick="undo()" title="Undo"
+                            data-i18n-title="pixel.tool.undo" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M3 7v6h6"></path>
+                                <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path>
+                            </svg>
+                            <span class="btn-label" data-i18n="pixel.tool.undo">Undo</span>
+                        </button>
+                        <button id="tool-redo" class="sys-btn" onclick="redo()" title="Redo"
+                            data-i18n-title="pixel.tool.redo" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M21 7v6h-6"></path>
+                                <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"></path>
+                            </svg>
+                            <span class="btn-label" data-i18n="pixel.tool.redo">Redo</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -774,6 +792,11 @@
 
         let lastDrawnRow = -1;
         let lastDrawnCol = -1;
+
+        // Undo / Redo history
+        let undoHistory = [];
+        let redoHistory = [];
+        const MAX_UNDO = 20;
 
         // Auto-save timer
         // Auto-save timer
@@ -885,6 +908,19 @@
             canvas.addEventListener('pointermove', moveDrawing);
             canvas.addEventListener('pointerup', stopDrawing);
             canvas.addEventListener('pointerleave', stopDrawing);
+
+            // Keyboard shortcuts for undo / redo
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    if (e.key === 'z' && !e.shiftKey) {
+                        e.preventDefault();
+                        undo();
+                    } else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
+                        e.preventDefault();
+                        redo();
+                    }
+                }
+            });
 
             // Prevent context menu
             canvas.oncontextmenu = (e) => e.preventDefault();
@@ -1282,6 +1318,10 @@
 
             currentDrawingId = null; // Mark as new/unsaved
             grid = createGrid(size); // Empty grid
+            undoHistory = []; // Clear undo history for new drawing
+            redoHistory = [];
+            updateUndoButton();
+            updateRedoButton();
 
             closeModal('new-drawing-modal');
             showEditor();
@@ -1331,6 +1371,10 @@
                 showEditor();
                 setupCanvas(false);
                 redrawAllPixels();
+                undoHistory = []; // Clear undo history when opening a drawing
+                redoHistory = [];
+                updateUndoButton();
+                updateRedoButton();
             } else {
                 // For 'Other' drawings, we display the saved image directly
                 // No grid editing possible
@@ -1603,6 +1647,7 @@
         }
 
         function startDrawing(e) {
+            saveUndoState();
             isDrawing = true;
             lastDrawnRow = -1;
             lastDrawnCol = -1;
@@ -1619,6 +1664,62 @@
                 lastDrawnRow = -1;
                 lastDrawnCol = -1;
                 triggerAutoSave();
+            }
+        }
+
+        // --- UNDO / REDO SYSTEM ---
+        function saveUndoState() {
+            if (isReadOnly) return;
+            // Deep copy the grid
+            const snapshot = grid.map(row => [...row]);
+            undoHistory.push(snapshot);
+            if (undoHistory.length > MAX_UNDO) {
+                undoHistory.shift();
+            }
+            // New action invalidates redo branch
+            redoHistory = [];
+            updateUndoButton();
+            updateRedoButton();
+        }
+
+        function undo() {
+            if (isReadOnly || undoHistory.length === 0) return;
+            // Push current state to redo before reverting
+            redoHistory.push(grid.map(row => [...row]));
+            grid = undoHistory.pop();
+            redrawAllPixels();
+            triggerAutoSave();
+            updateUndoButton();
+            updateRedoButton();
+        }
+
+        function redo() {
+            if (isReadOnly || redoHistory.length === 0) return;
+            // Push current state back to undo
+            undoHistory.push(grid.map(row => [...row]));
+            if (undoHistory.length > MAX_UNDO) {
+                undoHistory.shift();
+            }
+            grid = redoHistory.pop();
+            redrawAllPixels();
+            triggerAutoSave();
+            updateUndoButton();
+            updateRedoButton();
+        }
+
+        function updateUndoButton() {
+            const btn = document.getElementById('tool-undo');
+            if (btn) {
+                btn.disabled = undoHistory.length === 0;
+                btn.style.opacity = undoHistory.length === 0 ? '0.4' : '1';
+            }
+        }
+
+        function updateRedoButton() {
+            const btn = document.getElementById('tool-redo');
+            if (btn) {
+                btn.disabled = redoHistory.length === 0;
+                btn.style.opacity = redoHistory.length === 0 ? '0.4' : '1';
             }
         }
 
@@ -1669,6 +1770,7 @@
         }
 
         function confirmClear() {
+            saveUndoState();
             grid = createGrid(gridSize);
             redrawAllPixels();
             triggerAutoSave(); // Save cleared state
