@@ -35,8 +35,78 @@ const rtdb = admin.database();
 
 // --- STATE ---
 let targetUid = null;
-let targetUsername = null; // The display/kindle name
+let targetUsername = null; // The KindleChat/email-handle name used in message records
+let targetDisplayName = null;
 let deletionTasks = [];
+
+function formatIpKey(ip) {
+    return ip.replace(/\./g, '-').replace(/:/g, '_');
+}
+
+function safeFirebaseKey(value) {
+    return String(value || 'unknown').replace(/[.#$\[\]\/]/g, '_');
+}
+
+function buildBannedUserEntry(user, addedBy, addedAt) {
+    const entry = {
+        uid: user.uid,
+        username: user.username || user.uid,
+        addedBy
+    };
+    if (addedAt) {
+        entry.addedAt = addedAt;
+    } else {
+        entry.addedAt = admin.database.ServerValue.TIMESTAMP;
+    }
+    return entry;
+}
+
+async function upsertBannedIpForUser(ip) {
+    const formattedIp = formatIpKey(ip);
+    const ref = rtdb.ref(`banned_ips/${formattedIp}`);
+    const snap = await ref.once('value');
+    const existing = snap.val() || {};
+    const timestamp = admin.database.ServerValue.TIMESTAMP;
+    const bannedBy = 'nuke_user_script';
+    const user = {
+        uid: targetUid,
+        username: targetDisplayName || targetUsername || targetUid
+    };
+    const updates = {
+        ip,
+        lastUpdatedAt: timestamp,
+        lastUpdatedBy: bannedBy
+    };
+
+    if (!existing.bannedAt) updates.bannedAt = existing.timestamp || timestamp;
+    if (!existing.timestamp) updates.timestamp = existing.bannedAt || timestamp;
+    if (!existing.bannedBy) updates.bannedBy = bannedBy;
+    if (!existing.bannedUid) updates.bannedUid = user.uid;
+    if (!existing.bannedUsername) updates.bannedUsername = user.username;
+
+    const existingUsers = existing.bannedUsers || {};
+    const userKey = safeFirebaseKey(user.uid);
+    const userAlreadyAttached = existing.bannedUid === user.uid || !!existingUsers[userKey];
+    if (existing.bannedUid && !existingUsers[safeFirebaseKey(existing.bannedUid)]) {
+        const existingUser = {
+            uid: existing.bannedUid,
+            username: existing.bannedUsername || existing.username || existing.bannedUid
+        };
+        updates[`bannedUsers/${safeFirebaseKey(existing.bannedUid)}`] = buildBannedUserEntry(
+            existingUser,
+            existing.bannedBy || bannedBy,
+            existing.bannedAt || existing.timestamp
+        );
+    }
+
+    updates[`bannedUsers/${userKey}`] = buildBannedUserEntry(user, bannedBy);
+
+    await ref.update(updates);
+    return {
+        alreadyBanned: snap.exists(),
+        attachedDifferentUser: snap.exists() && !userAlreadyAttached
+    };
+}
 
 async function main() {
     console.log(`\n=== ReKindle User NUKE Tool ===`);
@@ -97,13 +167,13 @@ async function banUserAndIP() {
         if (ip) {
             console.log(`Found associated IP address: ${ip}`);
             if (FORCE_MODE) {
-                const formattedIp = ip.replace(/\./g, '-').replace(/:/g, '_');
-                await rtdb.ref(`banned_ips/${formattedIp}`).set({
-                    timestamp: admin.database.ServerValue.TIMESTAMP,
-                    bannedBy: 'nuke_user_script',
-                    bannedUid: targetUid
-                });
-                console.log(`[SUCCESS] IP ${ip} has been added to banned_ips list.`);
+                const banResult = await upsertBannedIpForUser(ip);
+                if (banResult.alreadyBanned) {
+                    const verb = banResult.attachedDifferentUser ? 'appended' : 'refreshed';
+                    console.log(`[SUCCESS] IP ${ip} was already banned; ${verb} ${targetDisplayName || targetUsername || targetUid} in the banned user list.`);
+                } else {
+                    console.log(`[SUCCESS] IP ${ip} has been added to banned_ips list.`);
+                }
             }
         } else {
             console.log(`No IP address found for this user in users_private.`);
@@ -133,6 +203,9 @@ async function resolveUser() {
             // For KindleChat, we need the email handle, NOT the display name
             const email = userRecord.email || '';
             targetUsername = email.split('@')[0] || userRecord.displayName || 'Unknown';
+            const publicSnap = await rtdb.ref(`users_public/${targetUid}`).once('value');
+            const publicData = publicSnap.val() || {};
+            targetDisplayName = publicData.displayName || publicData.username || userRecord.displayName || targetUsername;
             return;
         } catch (e) {
             // Not a valid Auth UID, treat as username
@@ -157,10 +230,12 @@ async function resolveUser() {
                 const userRecord = await admin.auth().getUser(uid);
                 const authEmail = userRecord.email || '';
                 targetUsername = authEmail.split('@')[0] || data.displayName;
+                targetDisplayName = data.displayName || data.username || targetUsername;
                 console.log(`Resolved Identity: Display="${data.displayName}", KindleChatUser="${targetUsername}"`);
             } catch (e) {
                 console.warn("Could not fetch Auth record, falling back to DisplayName:", e);
                 targetUsername = data.displayName || 'Unknown';
+                targetDisplayName = data.displayName || data.username || targetUsername;
             }
             return;
         }
@@ -169,6 +244,7 @@ async function resolveUser() {
     console.warn(`Warning: Could not find strict UID mapping for '${TARGET_USERNAME}'.`);
     console.warn(`Assuming '${TARGET_USERNAME}' is the raw KindleChat username.`);
     targetUsername = TARGET_USERNAME;
+    targetDisplayName = TARGET_USERNAME;
 }
 
 // --- SCANNING ---

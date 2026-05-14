@@ -1,21 +1,23 @@
 const admin = require('firebase-admin');
 const fs = require('fs');
+const path = require('path');
 
 // --- CONFIGURATION ---
-const SERVICE_ACCOUNT_PATH = '../service-account.json';
+const SERVICE_ACCOUNT_PATH = path.resolve(__dirname, '..', 'service-account.json');
 const DATABASE_URL = 'https://rekindle-dd1fa-default-rtdb.firebaseio.com/';
+const SCRIPT_PATH = path.relative(process.cwd(), __filename) || path.basename(__filename);
 
 // --- ARGS ---
 const args = process.argv.slice(2);
 
 function printUsage() {
     console.log('Usage:');
-    console.log('  node grant_moderator.js <email_or_username_or_uid>');
-    console.log('  node grant_moderator.js <email_or_username_or_uid> --revoke');
+    console.log(`  node ${SCRIPT_PATH} <email_or_username_or_uid>`);
+    console.log(`  node ${SCRIPT_PATH} <email_or_username_or_uid> --revoke`);
     console.log('');
     console.log('Examples:');
-    console.log('  node grant_moderator.js moderator@rekindle.ink');
-    console.log('  node grant_moderator.js john --revoke');
+    console.log(`  node ${SCRIPT_PATH} moderator@rekindle.ink`);
+    console.log(`  node ${SCRIPT_PATH} john --revoke`);
     process.exit(1);
 }
 
@@ -71,15 +73,16 @@ async function resolveUser(target) {
         }
     }
 
-    // Look up in users_public by username or email
+    // Look up in users_public by displayName, username, or email
     const snap = await rtdb.ref('users_public').once('value');
     const users = snap.val() || {};
     for (const [uid, data] of Object.entries(users)) {
+        const displayName = (data.displayName || '').toLowerCase();
         const username = (data.username || '').toLowerCase();
         const email = (data.email || '').toLowerCase();
         const t = target.toLowerCase();
-        if (username === t || email === t || email.startsWith(t + '@') || uid === target) {
-            return { uid, name: data.username || t, email: data.email || '' };
+        if (displayName === t || username === t || email === t || email.startsWith(t + '@') || uid === target) {
+            return { uid, name: data.displayName || data.username || t, email: data.email || '' };
         }
     }
 

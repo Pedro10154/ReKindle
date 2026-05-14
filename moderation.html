@@ -558,6 +558,10 @@
             color: #c00;
         }
 
+        .banned-ip-addr-redacted {
+            color: #666;
+        }
+
         .banned-ip-user {
             min-width: 130px;
         }
@@ -1108,6 +1112,125 @@
     function escapeHtml(str) {
         if (!str) return '';
         return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function displayIpForRole(ip) {
+        if (!ip) return '(not recorded)';
+        return isAdmin ? ip : '[redacted]';
+    }
+
+    function formatIpKey(ip) {
+        return ip.replace(/\./g, '-').replace(/:/g, '_');
+    }
+
+    function safeFirebaseKey(value) {
+        return String(value || 'unknown').replace(/[.#$\[\]\/]/g, '_');
+    }
+
+    function getBanUsernameForUser(user) {
+        if (!user) return '';
+        return user.displayName || user.emailHandle || (user.email ? user.email.split('@')[0] : '') || user.uid || '';
+    }
+
+    function buildBannedUserEntry(user, addedBy, addedAt) {
+        var entry = {
+            uid: user.uid,
+            username: user.username || user.uid,
+            addedBy: addedBy
+        };
+        entry.addedAt = addedAt || firebase.database.ServerValue.TIMESTAMP;
+        return entry;
+    }
+
+    function collectBannedUserUids(entry) {
+        var uids = [];
+        var seen = {};
+        function add(uid) {
+            if (!uid || seen[uid]) return;
+            seen[uid] = true;
+            uids.push(uid);
+        }
+
+        if (entry && entry.bannedUid) add(entry.bannedUid);
+        var users = (entry && entry.bannedUsers) || {};
+        Object.keys(users).forEach(function(key) {
+            var user = users[key];
+            if (user && typeof user === 'object' && user.uid) add(user.uid);
+        });
+        return uids;
+    }
+
+    function formatBannedUserList(entry) {
+        var names = [];
+        var seen = {};
+        function add(uid, username) {
+            var label = username || (uid ? uidNameCache[uid] : '') || uid || '';
+            var key = uid || label;
+            if (!label || seen[key]) return;
+            seen[key] = true;
+            names.push(label);
+        }
+
+        var users = (entry && entry.bannedUsers) || {};
+        Object.keys(users).forEach(function(key) {
+            var user = users[key];
+            if (typeof user === 'string') {
+                add(key, user);
+            } else if (user && typeof user === 'object') {
+                add(user.uid || key, user.username || user.displayName || (user.uid ? uidNameCache[user.uid] : ''));
+            }
+        });
+        if (entry && entry.bannedUid) {
+            add(entry.bannedUid, entry.bannedUsername || uidNameCache[entry.bannedUid]);
+        }
+        return names.length ? names.join(', ') : '(unknown)';
+    }
+
+    async function upsertBannedIpForUser(ip, user) {
+        var formattedIp = formatIpKey(ip);
+        var ref = rtdb.ref('banned_ips/' + formattedIp);
+        var snap = await ref.once('value');
+        var existing = snap.val() || {};
+        var timestamp = firebase.database.ServerValue.TIMESTAMP;
+        var bannedBy = currentUser ? currentUser.email : 'admin';
+        var username = getBanUsernameForUser(user);
+        var updates = {
+            ip: ip,
+            lastUpdatedAt: timestamp,
+            lastUpdatedBy: bannedBy
+        };
+
+        if (!existing.bannedAt) updates.bannedAt = existing.timestamp || timestamp;
+        if (!existing.timestamp) updates.timestamp = existing.bannedAt || timestamp;
+        if (!existing.bannedBy) updates.bannedBy = bannedBy;
+        if (!existing.bannedUid && user.uid) updates.bannedUid = user.uid;
+        if (!existing.bannedUsername && username) updates.bannedUsername = username;
+
+        var existingUsers = existing.bannedUsers || {};
+        var userKey = safeFirebaseKey(user.uid || username);
+        var userAlreadyAttached = existing.bannedUid === user.uid || !!existingUsers[userKey];
+        if (existing.bannedUid && !existingUsers[safeFirebaseKey(existing.bannedUid)]) {
+            var existingUser = {
+                uid: existing.bannedUid,
+                username: existing.bannedUsername || uidNameCache[existing.bannedUid] || existing.bannedUid
+            };
+            updates['bannedUsers/' + safeFirebaseKey(existing.bannedUid)] = buildBannedUserEntry(
+                existingUser,
+                existing.bannedBy || bannedBy,
+                existing.bannedAt || existing.timestamp
+            );
+        }
+
+        updates['bannedUsers/' + userKey] = buildBannedUserEntry({
+            uid: user.uid,
+            username: username || user.uid
+        }, bannedBy);
+
+        await ref.update(updates);
+        return {
+            alreadyBanned: snap.exists(),
+            attachedDifferentUser: snap.exists() && !userAlreadyAttached
+        };
     }
 
     function formatDate(ts) {
@@ -1768,11 +1891,13 @@
                 rtdb.ref('banned_ips').once('value')
             ]);
 
-            // Build set of banned UIDs from banned_ips entries (nuke_user.js stores bannedUid)
+            // Build set of banned UIDs from both legacy bannedUid and the newer bannedUsers map.
             var bannedByIp = new Set();
             var bannedIpsData = bannedIpsSnap.val() || {};
             Object.values(bannedIpsData).forEach(function(entry) {
-                if (entry && entry.bannedUid) bannedByIp.add(entry.bannedUid);
+                collectBannedUserUids(entry).forEach(function(uid) {
+                    bannedByIp.add(uid);
+                });
             });
 
             // Build annotated list
@@ -1910,28 +2035,34 @@
             var allUids = new Set();
             keys.forEach(function(k) {
                 var e = data[k];
-                if (e && e.bannedUid) allUids.add(e.bannedUid);
+                collectBannedUserUids(e).forEach(function(uid) {
+                    allUids.add(uid);
+                });
             });
             await Promise.all(Array.from(allUids).map(function(uid) { return resolveUid(uid); }));
 
             // Sort newest first
             keys.sort(function(a, b) {
-                var ta = (data[a] && data[a].bannedAt) || 0;
-                var tb = (data[b] && data[b].bannedAt) || 0;
+                var ta = (data[a] && (data[a].bannedAt || data[a].timestamp)) || 0;
+                var tb = (data[b] && (data[b].bannedAt || data[b].timestamp)) || 0;
                 return tb - ta;
             });
 
             var html = '';
-            keys.forEach(function(key) {
+            keys.forEach(function(key, index) {
                 var entry = data[key] || {};
                 var ip = entry.ip || key;
-                var userName = entry.bannedUid ? (uidNameCache[entry.bannedUid] || entry.bannedUid) : '(unknown)';
-                var meta = entry.bannedAt ? formatDate(entry.bannedAt) : '';
+                var ipLabel = displayIpForRole(ip);
+                var ipClass = isAdmin ? 'banned-ip-addr' : 'banned-ip-addr banned-ip-addr-redacted';
+                var userName = formatBannedUserList(entry);
+                var banTimestamp = entry.bannedAt || entry.timestamp;
+                var meta = banTimestamp ? formatDate(banTimestamp) : '';
                 var encodedKey = encodeURIComponent(key);
+                var rowId = isAdmin ? encodedKey : ('redacted-' + index);
                 if (entry.reason) meta += (meta ? ' — ' : '') + entry.reason;
 
-                html += '<div class="banned-ip-row" id="bip-' + encodedKey + '">'
-                    + '<span class="banned-ip-addr">' + escapeHtml(ip) + '</span>'
+                html += '<div class="banned-ip-row" id="bip-' + rowId + '">'
+                    + '<span class="' + ipClass + '">' + escapeHtml(ipLabel) + '</span>'
                     + '<span class="banned-ip-user">' + escapeHtml(userName) + '</span>'
                     + '<span class="banned-ip-meta">' + escapeHtml(meta) + '</span>'
                     + (isAdmin ? '<button class="remove-ban-btn" data-ban-key="' + encodedKey + '">Remove</button>' : '')
@@ -1954,7 +2085,7 @@
         var entry = await rtdb.ref('banned_ips/' + key).once('value');
         var data = entry.val() || {};
         var ip = data.ip || key;
-        var userName = data.bannedUid ? (uidNameCache[data.bannedUid] || data.bannedUid) : ip;
+        var userName = formatBannedUserList(data);
         if (!await showConfirm('Remove IP ban for ' + ip + ' (' + userName + ')?\n\nThis will allow this IP address to access ReKindle again.')) return;
         btn.disabled = true;
         try {
@@ -2131,16 +2262,11 @@
 
         setAdminStatus('Banning IP...');
         try {
-            var formattedIp = u.ip.replace(/\./g, '-').replace(/:/g, '_');
-            await rtdb.ref('banned_ips/' + formattedIp).set({
-                ip: u.ip,
-                bannedUid: u.uid,
-                bannedAt: firebase.database.ServerValue.TIMESTAMP,
-                bannedBy: currentUser ? currentUser.email : 'admin'
-            });
+            var banResult = await upsertBannedIpForUser(u.ip, u);
             adminTargetUser.isIpBanned = true;
             renderAdminUserInfo();
-            setAdminStatus('IP ' + u.ip + ' banned.');
+            var detail = banResult.attachedDifferentUser ? 'user added to banned IP list.' : 'user details refreshed in banned IP list.';
+            setAdminStatus('IP ' + u.ip + (banResult.alreadyBanned ? ' was already banned; ' + detail : ' banned.'));
             fetchBannedIps();
         } catch (err) {
             console.error(err);
@@ -2298,11 +2424,28 @@
 
         setAdminStatus('Setting timeout...');
         try {
+            var logKey = rtdb.ref('mod_actions').push().key;
             var updates = {};
-            updates['social_timeouts/' + u.uid] = { reason: reason, durationHours: hours, createdAt: firebase.database.ServerValue.TIMESTAMP };
+            updates['social_timeouts/' + u.uid] = {
+                reason: reason,
+                durationHours: hours,
+                moderatedBy: currentUser.uid,
+                createdAt: firebase.database.ServerValue.TIMESTAMP
+            };
             updates['users_private/' + u.uid + '/timeout_seen'] = null;
+            updates['mod_actions/' + logKey] = {
+                type: 'timeout',
+                moderatorUid: currentUser.uid,
+                moderatorName: currentUser.displayName || currentUser.email || currentUser.uid,
+                targetUid: u.uid,
+                targetName: u.displayName || u.uid,
+                durationHours: hours,
+                reason: reason,
+                createdAt: firebase.database.ServerValue.TIMESTAMP,
+                undone: false
+            };
             await rtdb.ref().update(updates);
-            adminTargetUser.timeoutData = { reason: reason, durationHours: hours };
+            adminTargetUser.timeoutData = { reason: reason, durationHours: hours, moderatedBy: currentUser.uid };
             renderAdminUserInfo();
             setAdminStatus('Timeout set: ' + escapeHtml(u.displayName || u.uid) + ' for ' + humanDuration + '.');
             fetchActiveTimeouts();
@@ -2320,9 +2463,21 @@
 
         setAdminStatus('Clearing timeout...');
         try {
+            var logKey = rtdb.ref('mod_actions').push().key;
             var updates = {};
             updates['social_timeouts/' + u.uid] = null;
             updates['users_private/' + u.uid + '/timeout_seen'] = null;
+            updates['mod_actions/' + logKey] = {
+                type: 'timeout_lift',
+                moderatorUid: currentUser.uid,
+                moderatorName: currentUser.displayName || currentUser.email || currentUser.uid,
+                targetUid: u.uid,
+                targetName: u.displayName || u.uid,
+                durationHours: 0,
+                reason: '(timeout removed)',
+                createdAt: firebase.database.ServerValue.TIMESTAMP,
+                undone: false
+            };
             await rtdb.ref().update(updates);
             adminTargetUser.timeoutData = null;
             renderAdminUserInfo();
