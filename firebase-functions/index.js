@@ -483,6 +483,15 @@ exports.registerUser = onCall(callOptions, async (request) => {
             }
         }
 
+        // Create public profile so moderation search can find the user immediately
+        await admin.database().ref(`users_public/${userRecord.uid}`).set({
+            displayName: username,
+            username: username,
+            email: email,
+            createdAt: admin.database.ServerValue.TIMESTAMP,
+            lastActive: admin.database.ServerValue.TIMESTAMP
+        });
+
         // Return a custom token so the client can call signInWithCustomToken()
         const customToken = await admin.auth().createCustomToken(userRecord.uid);
         return { customToken };

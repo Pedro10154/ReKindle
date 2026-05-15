@@ -1337,7 +1337,7 @@
             var snap = await rtdb.ref('users_public/' + input).once('value');
             if (snap.exists()) {
                 var d = snap.val();
-                return { uid: input, emailHandle: d.email ? d.email.split('@')[0] : input, displayName: d.username || input };
+                return { uid: input, emailHandle: d.email ? d.email.split('@')[0] : input, displayName: d.displayName || input };
             }
         }
 
@@ -1345,10 +1345,11 @@
         var users = allSnap.val() || {};
         for (var pair of Object.entries(users)) {
             var uid = pair[0], d = pair[1];
-            var username = (d.username || '').toLowerCase();
+            var displayName = (d.displayName || '').toLowerCase();
+            var username = (d.username || (d.email || '').split('@')[0] || '').toLowerCase();
             var email = (d.email || '').toLowerCase();
-            if (username === inputLower || email === inputLower || email.startsWith(inputLower + '@') || uid === input) {
-                return { uid: uid, emailHandle: d.email ? d.email.split('@')[0] : uid, displayName: d.username || input };
+            if (displayName === inputLower || username === inputLower || email === inputLower || email.startsWith(inputLower + '@') || uid === input) {
+                return { uid: uid, emailHandle: d.email ? d.email.split('@')[0] : uid, displayName: d.displayName || input };
             }
         }
         return null;
@@ -2167,7 +2168,7 @@
                 }
             }
 
-            // Scan users_public by displayName or email
+            // Scan users_public by displayName, username, or email
             if (!uid) {
                 var allSnap = await rtdb.ref('users_public').once('value');
                 var allUsers = allSnap.val() || {};
@@ -2175,8 +2176,9 @@
                 for (var entry of Object.entries(allUsers)) {
                     var u = entry[0], d = entry[1];
                     var n = (d.displayName || '').toLowerCase();
+                    var un = (d.username || (d.email || '').split('@')[0] || '').toLowerCase();
                     var e = (d.email || '').toLowerCase();
-                    if (n === inputLower || e === inputLower || e.startsWith(inputLower + '@') || u === input) {
+                    if (n === inputLower || un === inputLower || e === inputLower || e.startsWith(inputLower + '@') || u === input) {
                         uid = u; displayName = d.displayName || ''; email = d.email || '';
                         break;
                     }
