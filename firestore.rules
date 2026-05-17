@@ -272,6 +272,7 @@ service cloud.firestore {
         // Note: For anonymous users, email might be null, so check before accessing.
         allow create: if request.auth != null &&
                         (
+                          request.resource.data.uid == request.auth.uid ||
                           (request.auth.token.email == null && request.resource.data.user == request.auth.uid) ||
                           (request.auth.token.email != null && request.resource.data.user == request.auth.token.email.split('@')[0])
                         ) &&

@@ -1397,6 +1397,7 @@
         var TRANSLATION_WORKER_URL = "https://rekindle-translate.timjarnott.workers.dev";
         // Example: "https://rekindle-chat-worker.timothyarnott.workers.dev"
         var currentRoomId = 'general';
+        var currentDmPartnerName = '';
         var isPro = false; // Pro Status
         var roomToDeleteId = null;
         var unsubscribeMsg = null;
@@ -2250,6 +2251,7 @@
             if (currentRoomId === id) return;
 
             currentRoomId = id;
+            currentDmPartnerName = (id !== 'general') ? name : '';
             document.getElementById('room-title').innerText = name;
 
             if (currentUser && roomStatesLoaded) {
@@ -3074,16 +3076,30 @@
             var div = document.createElement('div');
             var toggleBtnHtml = '';
 
-            var isSelf = currentUser && msg.uid && (msg.uid === currentUser.uid);
+            var isSelf = currentUser && (
+                (msg.uid && msg.uid === currentUser.uid) ||
+                (!msg.uid && msg.user && msg.user === currentUsername)
+            );
             div.className = 'msg ' + (isSelf ? 'self' : 'other');
             div.dataset.msgId = msgId;
             div.dataset.uid = msg.uid || '';
             if (typeof msg.timestamp === 'number') div.dataset.ts = msg.timestamp;
 
-            var safeUser = escapeHtml(msg.uid ? msg.uid.substring(0, 8) : '');
             var safeUid = escapeHtml(msg.uid || '');
             var avatarId = 'avatar-' + (msgId || Math.random().toString(36).substr(2, 9));
-            var nameHtml = isSelf ? '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'\')">' + window.t('kindlechat.msg.you', 'You') + '</span>' : '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'\')" style="font-weight:bold;">' + safeUser + '</span>';
+            var nameHtml;
+            if (currentRoomId !== 'general') {
+                var dmSenderName = isSelf ? currentUsername : (currentDmPartnerName || msg.user || '');
+                var safeDmSender = escapeHtml(dmSenderName);
+                nameHtml = isSelf
+                    ? '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'' + safeDmSender + '\')">' + window.t('kindlechat.msg.you', 'You') + '</span>'
+                    : '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'' + safeDmSender + '\')" style="font-weight:bold;">' + safeDmSender + '</span>';
+            } else {
+                var safeUser = escapeHtml(msg.uid ? msg.uid.substring(0, 8) : '');
+                nameHtml = isSelf
+                    ? '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'\')">' + window.t('kindlechat.msg.you', 'You') + '</span>'
+                    : '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'\')" style="font-weight:bold;">' + safeUser + '</span>';
+            }
 
 
             var timeStr = msg.timestamp ? formatChatTime(msg.timestamp) : "";
@@ -3322,9 +3338,14 @@
             }
 
             // Resolve avatar after DOM insertion.
-            // New messages (with uid): direct RTDB lookup, same as topics.
-            // Old messages (no uid): username-based fallback.
-            resolveMessageAuthor(msg.uid, div, avatarId);
+            // DMs: both users share one avatar each — resolve by username (same as sidebar).
+            // General: per-message uid lookup via resolveMessageAuthor.
+            if (currentRoomId !== 'general') {
+                var dmSender = isSelf ? currentUsername : (currentDmPartnerName || msg.user || '');
+                if (dmSender) resolveAvatar(dmSender, avatarId);
+            } else {
+                resolveMessageAuthor(msg.uid, div, avatarId);
+            }
 
             if (msg.is_flipnote && msg.flipnote_data) {
                 setTimeout(function () { playFlipnote(msgId); }, 200);
@@ -3935,8 +3956,8 @@
 
             // Resolve author name from user_cards if available
             var authorName = authorUid ? authorUid.substring(0, 8) : 'Unknown';
-            if (authorUid && window.rekindleCardCache && window.rekindleCardCache[authorUid]) {
-                authorName = window.rekindleCardCache[authorUid].username || authorName;
+            if (authorUid && window.rekindleCardCache && window.rekindleCardCache[authorUid] && window.rekindleCardCache[authorUid].card) {
+                authorName = window.rekindleCardCache[authorUid].card.username || authorName;
             }
 
             // Create Entry

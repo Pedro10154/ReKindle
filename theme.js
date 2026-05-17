@@ -700,7 +700,7 @@
     window.rekindleAvatarCache = {};
     window.rekindleFetchAvatarSeed = function(db, uid, callback) {
         if (!uid) { callback('default'); return; }
-        if (window.rekindleAvatarCache[uid]) {
+        if (uid in window.rekindleAvatarCache) {
             callback(window.rekindleAvatarCache[uid]);
             return;
         }
@@ -720,12 +720,15 @@
     };
 
     // --- USER CARD CACHING HELPER ---
+    // Cache stores { card, ts } entries; TTL is 15 minutes (900 000 ms).
     window.rekindleCardCache = {};
     var _pendingCardFetches = {};
+    var _CARD_TTL = 900000;
     window.rekindleFetchUserCard = function(db, uid, callback) {
         if (!uid || !db) { callback(null); return; }
-        if (window.rekindleCardCache[uid]) {
-            callback(window.rekindleCardCache[uid]);
+        var cached = window.rekindleCardCache[uid];
+        if (cached && (Date.now() - cached.ts) < _CARD_TTL) {
+            callback(cached.card);
             return;
         }
         if (_pendingCardFetches[uid]) {
@@ -735,7 +738,7 @@
         _pendingCardFetches[uid] = [callback];
         db.ref('user_cards/' + uid).once('value').then(function(snap) {
             var card = snap.exists() ? snap.val() : null;
-            window.rekindleCardCache[uid] = card;
+            window.rekindleCardCache[uid] = { card: card, ts: Date.now() };
             var cbs = _pendingCardFetches[uid];
             delete _pendingCardFetches[uid];
             cbs.forEach(function(cb) { cb(card); });
@@ -746,9 +749,7 @@
         });
     };
     window.rekindleInvalidateUserCard = function(uid) {
-        if (uid) {
-            delete window.rekindleCardCache[uid];
-        }
+        if (uid) delete window.rekindleCardCache[uid];
     };
 
 })();

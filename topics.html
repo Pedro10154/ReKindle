@@ -1896,7 +1896,8 @@
             var avatarId = 'avatar-' + (msg.id || Math.random().toString(36).substr(2, 9));
 
             // Check theme.js card cache synchronously — set during any prior rekindleFetchUserCard call
-            var cached = window.rekindleCardCache && window.rekindleCardCache[msg.authorId];
+            var _cachedEntry = window.rekindleCardCache && window.rekindleCardCache[msg.authorId];
+            var cached = _cachedEntry && _cachedEntry.card;
             if (cached && typeof cached === 'object') {
                 var cachedName = cached.username || '';
                 var isDev = (cachedName === 'ukiyo');
