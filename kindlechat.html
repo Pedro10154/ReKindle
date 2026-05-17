@@ -1061,6 +1061,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="js/rtdb-tracker.js?v=1"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-functions-compat.js"></script>
     <script src="emojis.js?v=2"></script>
 
@@ -1403,10 +1404,8 @@
         var isLoadingMore = false; // For pagination
         var noMoreGeneralMessages = false; // True once we've reached the oldest message in RTDB
         var supporterUsers = {}; // Store supporter usernames as object for ES5 compatibility
-        var usernameToProfile = {}; // Cache: username -> { uid, avatarSeed }
+        var usernameToProfile = {}; // Cache: username -> { uid, avatarSeed } (populated lazily as messages render)
         var _pendingProfileFetches = {}; // Dedup in-flight username-based lookups
-        var _authorCache = {};          // Cache: uid -> { avatarSeed }  (uid-based, like topics)
-        var _pendingUidFetches = {};    // Dedup in-flight uid-based lookups
         // KINDLE MEMORY: track which messages are currently rendered in the
         // general channel so child_added can dedupe across initial-load,
         // pagination, and live updates. Reset whenever the room changes.
@@ -1585,8 +1584,8 @@
                     // Run cleanup in background (non-blocking)
                     cleanupEmptyChats();
 
-                    // Build username cache for avatars
-                    buildUsernameCache();
+                    // Username/avatar cache is populated lazily as messages render
+                    // via rekindleFetchUserCard (reads tiny /user_cards records).
 
                     // Wait for supporters to load BEFORE loading messages to avoid race condition on Pro styling
                     fetchSupporters().then(function () {
@@ -2923,91 +2922,10 @@
         }
 
         // --- USERNAME → PROFILE CACHE ---
-        function _seedUidCacheFromUsernameCache() {
-            // Populate _authorCache and mark _pendingUidFetches resolved so that
-            // resolveMessageAuthor never fires individual RTDB queries for users
-            // already covered by the bulk fetch.
-            for (var _n in usernameToProfile) {
-                var _p = usernameToProfile[_n];
-                if (_p && _p.uid && !_authorCache[_p.uid]) {
-                    _authorCache[_p.uid] = { avatarSeed: _p.avatarSeed };
-                    _pendingUidFetches[_p.uid] = true;
-                }
-            }
-        }
-
-        function buildUsernameCache() {
-            var CACHE_KEY = 'rkUsernameCacheV1';
-            var CACHE_TTL = 10 * 60 * 1000; // 10 minutes
-            try {
-                var cached = sessionStorage.getItem(CACHE_KEY);
-                if (cached) {
-                    var parsed = JSON.parse(cached);
-                    if (Date.now() < parsed.expiry) {
-                        usernameToProfile = parsed.data;
-                        _seedUidCacheFromUsernameCache();
-                        return;
-                    }
-                }
-            } catch (e) {}
-
-            rtdb.ref('users_public').orderByChild('lastActive').limitToLast(200).once('value').then(function (snap) {
-                var all = snap.val() || {};
-                usernameToProfile = {};
-                for (var uid in all) {
-                    var u = all[uid];
-                    var name = '';
-                    if (u.email) {
-                        name = u.email.split('@')[0];
-                    } else if (u.displayName && u.displayName.indexOf('@') !== -1) {
-                        name = u.displayName.split('@')[0];
-                    } else {
-                        name = u.displayName || uid.split('@')[0];
-                    }
-                    if (name) {
-                        usernameToProfile[name] = {
-                            uid: uid,
-                            avatarSeed: u.customAvatar || u.avatarSeed || uid
-                        };
-                    }
-                }
-                _seedUidCacheFromUsernameCache();
-                try {
-                    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: usernameToProfile, expiry: Date.now() + CACHE_TTL }));
-                } catch (e) {}
-            })['catch'](function (err) {
-                console.warn('Could not build username cache:', err);
-            });
-        }
-
-        // --- UID-BASED PROFILE FETCH (like topics) ---
-        function fetchProfileByUid(uid, callback) {
-            if (_pendingUidFetches[uid] === true) {
-                if (callback) callback(_authorCache[uid] || null);
-                return;
-            }
-            if (Array.isArray(_pendingUidFetches[uid])) {
-                if (callback) _pendingUidFetches[uid].push(callback);
-                return;
-            }
-            _pendingUidFetches[uid] = callback ? [callback] : [];
-            rtdb.ref('users_public/' + uid).once('value').then(function (snap) {
-                var cbs = _pendingUidFetches[uid] || [];
-                _pendingUidFetches[uid] = true;
-                var seed = uid;
-                if (snap.exists()) {
-                    var u = snap.val();
-                    seed = u.customAvatar || u.avatarSeed || uid;
-                }
-                _authorCache[uid] = { avatarSeed: seed };
-                cbs.forEach(function (cb) { cb(_authorCache[uid]); });
-            })['catch'](function () {
-                var cbs = _pendingUidFetches[uid] || [];
-                _pendingUidFetches[uid] = true;
-                _authorCache[uid] = { avatarSeed: uid };
-                cbs.forEach(function (cb) { cb(null); });
-            });
-        }
+        // Reads come from /user_cards (tiny records, ~80 bytes each), with the
+        // localStorage layer in theme.js absorbing most repeat lookups. The
+        // legacy bulk preload of 200 users from /users_public has been removed
+        // in favour of fully lazy resolution as each message renders.
 
         function resolveMessageAuthor(uid, username, avatarId) {
             if (!uid) {
@@ -3015,18 +2933,15 @@
                 resolveAvatar(username, avatarId);
                 return;
             }
-            var cached = _authorCache[uid];
-            if (cached) {
-                drawAvatar(avatarId, cached.avatarSeed);
-                return;
-            }
             // Draw hash fallback immediately so canvas isn't blank
             drawAvatar(avatarId, username || uid);
-            fetchProfileByUid(uid, function (p) {
-                if (p) {
-                    drawAvatar(avatarId, p.avatarSeed);
-                    // Keep usernameToProfile in sync for any username-based paths
-                    if (username) usernameToProfile[username] = { uid: uid, avatarSeed: p.avatarSeed };
+            window.rekindleFetchUserCard(rtdb, uid, function (card) {
+                if (!card) return;
+                var seed = card.customAvatar || card.avatarSeed || uid;
+                drawAvatar(avatarId, seed);
+                var name = card.username || username;
+                if (name && !usernameToProfile[name]) {
+                    usernameToProfile[name] = { uid: uid, avatarSeed: seed };
                 }
             });
         }
@@ -3044,23 +2959,21 @@
             }
             // Start fetch, store callback queue
             _pendingProfileFetches[username] = callback ? [callback] : [];
-            rtdb.ref('users_public').orderByChild('email')
-                .startAt(username + '@').endAt(username + '@')
-                .limitToFirst(1).once('value').then(function (snap) {
-                    var cbs = _pendingProfileFetches[username] || [];
-                    _pendingProfileFetches[username] = true; // mark resolved
-                    if (!snap.exists()) { cbs.forEach(function (cb) { cb(null); }); return; }
-                    snap.forEach(function (child) {
-                        var u = child.val();
-                        var seed = u.customAvatar || u.avatarSeed || child.key;
-                        usernameToProfile[username] = { uid: child.key, avatarSeed: seed };
-                        cbs.forEach(function (cb) { cb(usernameToProfile[username]); });
-                    });
-                })['catch'](function () {
-                    var cbs = _pendingProfileFetches[username] || [];
-                    delete _pendingProfileFetches[username];
-                    cbs.forEach(function (cb) { cb(null); });
+            rtdb.ref('user_cards').orderByChild('username').equalTo(username).limitToFirst(1).once('value').then(function (snap) {
+                var cbs = _pendingProfileFetches[username] || [];
+                _pendingProfileFetches[username] = true; // mark resolved
+                if (!snap.exists()) { cbs.forEach(function (cb) { cb(null); }); return; }
+                snap.forEach(function (child) {
+                    var c = child.val() || {};
+                    var seed = c.customAvatar || c.avatarSeed || child.key;
+                    usernameToProfile[username] = { uid: child.key, avatarSeed: seed };
+                    cbs.forEach(function (cb) { cb(usernameToProfile[username]); });
                 });
+            })['catch'](function () {
+                var cbs = _pendingProfileFetches[username] || [];
+                delete _pendingProfileFetches[username];
+                cbs.forEach(function (cb) { cb(null); });
+            });
         }
 
         function resolveAvatar(username, canvasId) {

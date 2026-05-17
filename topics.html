@@ -952,23 +952,7 @@
         var auth = firebase.auth();
         var db = firebase.database();
         var ADMIN_EMAIL = 'ukiyo@rekindle.ink';
-        var authorNameCache = {};
-        var authorNameCacheKeys = []; // FIFO insertion order to bound cache size
         var supporterUsers = {};
-
-        // Insert into authorNameCache while enforcing AUTHOR_CACHE_LIMIT (FIFO eviction).
-        function setAuthorCache(uid, value) {
-            if (!Object.prototype.hasOwnProperty.call(authorNameCache, uid)) {
-                authorNameCacheKeys.push(uid);
-            }
-            authorNameCache[uid] = value;
-            // window.AUTHOR_CACHE_LIMIT may not be initialized yet on first call
-            var limit = (typeof AUTHOR_CACHE_LIMIT === 'number') ? AUTHOR_CACHE_LIMIT : 200;
-            while (authorNameCacheKeys.length > limit) {
-                var oldest = authorNameCacheKeys.shift();
-                if (oldest !== uid) delete authorNameCache[oldest];
-            }
-        }
 
         function fetchSupporters() {
             var fs = firebase.firestore();
@@ -1085,7 +1069,6 @@
         // Kindle memory caps + batched loading (mirrors kindlechat pattern)
         var MESSAGES_INITIAL_LOAD = 50;       // initial live window
         var MESSAGES_PER_BATCH = 25;          // older messages per "load more" page
-        var AUTHOR_CACHE_LIMIT = 200;         // bound name/avatar cache
         var SIDEBAR_RENDER_DEBOUNCE_MS = 250; // coalesce sidebar redraws
         var topicsListenerRef = null;
         var rulesListenerRef = null;
@@ -2004,13 +1987,13 @@
             // Avatar ID
             var avatarId = 'avatar-' + (msg.id || Math.random().toString(36).substr(2, 9));
 
-            // Check cache synchronously if available
-            var cached = authorNameCache[msg.authorId];
-            if (cached && typeof cached === 'object' && !cached.then) {
-                var isDev = (msg.authorId === 'ukiyo' || cached.email === 'ukiyo@rekindle.ink' || cached.displayName === 'ukiyo' || cached.displayName === 'ukiyo@rekindle.ink');
+            // Check theme.js card cache synchronously — set during any prior rekindleFetchUserCard call
+            var cached = window.rekindleCardCache && window.rekindleCardCache[msg.authorId];
+            if (cached && typeof cached === 'object') {
+                var cachedName = cached.username || '';
+                var isDev = (cachedName === 'ukiyo');
                 if (!isDev && currentUser && msg.authorId === currentUser.uid && currentUser.email === 'ukiyo@rekindle.ink') isDev = true;
-
-                var isPro = cached.kindlePlus || supporterUsers[cached.displayName] || supporterUsers[cached.email] || false;
+                var isPro = supporterUsers[cachedName] || false;
                 if (isDev) {
                     nameBadge = '<span class="dev-tag">DEV</span>';
                     bubbleClass = 'developer';
@@ -2601,21 +2584,13 @@
         function resolveAuthorName(uid, element, avatarId) {
             if (!uid || !element) return;
 
-            function applyUserTheme(user, el) {
-                // IN TOPICS: We strictly use the KindleChat style username: email prefix or UID head
-                var kindleName = "";
-                if (user.email) {
-                    kindleName = user.email.split('@')[0];
-                } else if (user.displayName && user.displayName.indexOf('@') !== -1) {
-                    kindleName = user.displayName.split('@')[0];
-                } else {
-                    kindleName = user.displayName || (uid ? uid.split('@')[0] : window.t('common.anonymous', 'Anonymous'));
-                }
+            function applyCard(card, el) {
+                var kindleName = (card && card.username) ? card.username : uid.substring(0, 8);
 
-                var isDev = (uid === 'ukiyo' || user.email === 'ukiyo@rekindle.ink' || kindleName === 'ukiyo' || kindleName === 'ukiyo@rekindle.ink');
+                var isDev = (kindleName === 'ukiyo');
                 if (!isDev && currentUser && uid === currentUser.uid && currentUser.email === 'ukiyo@rekindle.ink') isDev = true;
 
-                var isPro = user.kindlePlus || supporterUsers[kindleName] || supporterUsers[user.email] || false;
+                var isPro = supporterUsers[kindleName] || false;
 
                 var nameBadge = '';
                 var bubbleClass = '';
@@ -2628,7 +2603,6 @@
                     bubbleClass = 'supporter';
                 }
 
-                // Strictly update the display to the Kindle name + badge
                 if (nameBadge) {
                     el.innerHTML = nameBadge + escapeHtml(kindleName);
                 } else {
@@ -2636,58 +2610,19 @@
                 }
 
                 if (bubbleClass) {
-                    // Need to go up one more level because of msg-row wrapper
                     var bubble = el.parentNode.parentNode.querySelector('.msg-bubble');
                     if (bubble) bubble.className = 'msg-bubble ' + bubbleClass;
                 }
 
-                // Draw Avatar if ID provided
                 if (avatarId) {
-                    // Use customAvatar if available, else avatarSeed if available, else UID
-                    var seed = user.customAvatar || user.avatarSeed || uid;
+                    var seed = (card && (card.customAvatar || card.avatarSeed)) ? (card.customAvatar || card.avatarSeed) : uid;
                     drawAvatar(avatarId, seed);
                 }
             }
 
-            // 1. Check Cache
-            if (authorNameCache[uid]) {
-                if (typeof authorNameCache[uid].then === 'function') {
-                    authorNameCache[uid].then(function (user) {
-                        applyUserTheme(user, element);
-                    });
-                } else {
-                    applyUserTheme(authorNameCache[uid], element);
-                }
-                return;
-            }
-
-            // 2. Fetch
-            var promise = db.ref('users_public/' + uid).once('value')
-                .then(function (snap) {
-                    var data = snap.val();
-                    var profile;
-                    if (data) {
-                        profile = data;
-                    } else {
-                        // If no profile, use the existing name from the message if possible
-                        var currentName = element.innerText;
-                        if (currentName && currentName !== window.t('common.anonymous', 'Anonymous') && currentName !== 'Anonymous') {
-                            profile = { displayName: currentName };
-                        } else {
-                            // Last resort: splitting ID is NOT helpful for UIDs, but better than "Anonymous"
-                            // if it happens to be an old-style UID or we can't find anything else.
-                            // But usually appendMessage already put a name there.
-                            profile = { displayName: window.t('common.anonymous', 'Anonymous') };
-                        }
-                    }
-                    profile.uid = uid;
-                    setAuthorCache(uid, profile);
-                    return profile;
-                });
-
-            setAuthorCache(uid, promise);
-            promise.then(function (user) {
-                applyUserTheme(user, element);
+            // rekindleFetchUserCard handles dedup, in-memory cache, and 1h localStorage cache
+            window.rekindleFetchUserCard(db, uid, function (card) {
+                applyCard(card, element);
             });
         }
 

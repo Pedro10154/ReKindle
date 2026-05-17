@@ -1487,11 +1487,14 @@
                         RekindleIpBan.enforceOnAuthStateChanged(user);
 
                         if (rtdb) {
-                            rtdb.ref('users_public/' + user.uid).on('value', snap => {
+                            // Listen on /user_cards (tiny) instead of /users_public so the
+                            // listener only re-fires when avatar/name actually changes.
+                            rtdb.ref('user_cards/' + user.uid).on('value', snap => {
                                 if (snap.exists()) {
-                                    const profile = snap.val();
-                                    const avatarSeed = profile.customAvatar || profile.avatarSeed || user.uid;
+                                    const card = snap.val();
+                                    const avatarSeed = card.customAvatar || card.avatarSeed || user.uid;
                                     drawAvatar('user-badge-icon', avatarSeed);
+                                    window.rekindleInvalidateUserCard && window.rekindleInvalidateUserCard(user.uid);
                                 } else {
                                     drawAvatar('user-badge-icon', user.uid);
                                 }

@@ -1319,9 +1319,11 @@
         if (!uid) return '?';
         if (uidNameCache[uid]) return uidNameCache[uid];
         try {
-            var snap = await rtdb.ref('users_public/' + uid).once('value');
+            // /user_cards is a tiny mirror with just username + avatar fields,
+            // much cheaper than pulling the full /users_public record.
+            var snap = await rtdb.ref('user_cards/' + uid).once('value');
             var data = snap.val();
-            var name = (data && data.email) ? data.email.split('@')[0] : (data && data.displayName) ? data.displayName : uid.substring(0, 8);
+            var name = (data && data.username) ? data.username : uid.substring(0, 8);
             uidNameCache[uid] = name;
             return name;
         } catch (e) {
