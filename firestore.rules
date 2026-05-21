@@ -451,9 +451,11 @@ service cloud.firestore {
 
       match /comments/{commentId} {
         allow read: if true;
-        allow create: if request.auth != null && 
+        // Comment IDs must follow {uid}_1, {uid}_2, or {uid}_3 — this caps each user at 3 per suggestion.
+        allow create: if request.auth != null &&
                          request.resource.data.authorUid == request.auth.uid &&
-                         isValidText(request.resource.data.text);
+                         isValidText(request.resource.data.text) &&
+                         (isDeveloper() || commentId == request.auth.uid + '_1' || commentId == request.auth.uid + '_2' || commentId == request.auth.uid + '_3');
         allow delete: if request.auth != null && (resource.data.authorUid == request.auth.uid || isDeveloper());
       }
     }

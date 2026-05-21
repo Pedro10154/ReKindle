@@ -1663,15 +1663,32 @@
                 const text = inp.value.trim();
                 if (!text || !currentSuggestionId || !currentUser) return;
 
-                db.collection('suggestions').doc(currentSuggestionId).collection('comments').add({
-                    text: text,
-                    authorName: currentUser.displayName || currentUser.email.split('@')[0],
-                    authorUid: currentUser.uid,
-                    authorEmail: currentUser.email,
-                    isPro: isPro,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                const commentsRef = db.collection('suggestions').doc(currentSuggestionId).collection('comments');
+                commentsRef.where('authorUid', '==', currentUser.uid).get().then(function (snapshot) {
+                    // Find first unused slot among _1, _2, _3
+                    const usedIds = new Set();
+                    snapshot.forEach(function (doc) { usedIds.add(doc.id); });
+                    let slot = null;
+                    for (var i = 1; i <= 3; i++) {
+                        if (!usedIds.has(currentUser.uid + '_' + i)) { slot = i; break; }
+                    }
+                    if (!slot) {
+                        showMessage("Limit Reached", "You can only post 3 comments per suggestion.");
+                        return;
+                    }
+                    commentsRef.doc(currentUser.uid + '_' + slot).set({
+                        text: text,
+                        authorName: currentUser.displayName || currentUser.email.split('@')[0],
+                        authorUid: currentUser.uid,
+                        authorEmail: currentUser.email,
+                        isPro: isPro,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    inp.value = '';
+                }).catch(function (err) {
+                    console.error("Error checking comment count:", err);
+                    showMessage("Error", "Could not post comment. Please try again.");
                 });
-                inp.value = '';
             };
 
             // SUBMIT SUGGESTION
