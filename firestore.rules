@@ -423,40 +423,14 @@ service cloud.firestore {
       allow delete: if request.auth != null && resource.data.uploaderUid == request.auth.uid;
     }
 
-    // 14. SUGGESTIONS APP
+    // 14. SUGGESTIONS APP (ARCHIVED — migrated to RTDB)
     match /suggestions/{suggestionId} {
       allow read: if true;
-      allow create: if request.auth != null &&
-                      request.resource.data.authorUid == request.auth.uid &&
-                      isValidText(request.resource.data.title) &&
-                      isValidText(request.resource.data.description) &&
-                      (request.resource.data.category == null || isValidText(request.resource.data.category)) &&
-                      (request.resource.data.device == null || isValidText(request.resource.data.device));
-      
-      // Update: 
-      // 1. Author can edit their own suggestion (title/desc).
-      // 2. ANY authenticated user can update 'upvotes' (toggle their UID in the array).
-      // 3. Admin (ukiyo) can update any field for merging/moderation.
-      allow update: if request.auth != null && (
-          (resource.data.authorUid == request.auth.uid && 
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description'])) 
-          ||
-          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotes']))
-          ||
-          isDeveloper()
-      );
-
-      // Delete: Admin only (for merging duplicates)
-      allow delete: if isDeveloper();
+      allow create, update, delete: if false;
 
       match /comments/{commentId} {
         allow read: if true;
-        // Comment IDs must follow {uid}_1, {uid}_2, or {uid}_3 — this caps each user at 3 per suggestion.
-        allow create: if request.auth != null &&
-                         request.resource.data.authorUid == request.auth.uid &&
-                         isValidText(request.resource.data.text) &&
-                         (isDeveloper() || commentId == request.auth.uid + '_1' || commentId == request.auth.uid + '_2' || commentId == request.auth.uid + '_3');
-        allow delete: if request.auth != null && (resource.data.authorUid == request.auth.uid || isDeveloper());
+        allow create, update, delete: if false;
       }
     }
   }

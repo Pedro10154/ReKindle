@@ -827,7 +827,7 @@
 
             let currentUser = null;
             let currentSuggestionId = null;
-            let unsubscribeComments = null;
+            let commentsRefListener = null;
             let isPro = false;
             let supporterUsers = {};
 
@@ -960,20 +960,9 @@
                             listEl.appendChild(loadingDiv);
                         }
 
-                        // Fetch a wider pool for searching
-                        db.collection('suggestions').orderBy('createdAt', 'desc').limit(300).get().then(function (snapshot) {
-                            allSearchSuggestions = [];
-                            snapshot.forEach(function (doc) {
-                                var data = doc.data();
-                                data.id = doc.id;
-                                allSearchSuggestions.push(data);
-                            });
-                            renderList();
-                        }).catch(function (error) {
-                            console.error("Error loading search suggestions:", error);
-                            const loading = document.getElementById('search-loading');
-                            if (loading) loading.remove();
-                        });
+                        // Use already-loaded suggestions for search
+                        allSearchSuggestions = allSuggestions;
+                        renderList();
                     }, 500);
                 }
             };
@@ -1008,29 +997,17 @@
                 loadSuggestions();
             };
 
-            // LOAD SUGGESTIONS (Optimization: Query by category to save reads)
+            // LOAD SUGGESTIONS (RTDB: load all, filter client-side)
             function loadSuggestions() {
                 const listEl = document.getElementById('suggestion-list');
                 listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#666;" data-i18n="suggestions.msg.loading">Loading...</div>';
+                allSearchSuggestions = null; // Reset search cache on reload
 
-                let query = db.collection('suggestions');
-
-                if (currentFilter === 'mine') {
-                    query = query.where('authorUid', '==', currentUser.uid);
-                } else if (currentFilter === 'done' || currentFilter === 'closed' || currentFilter === 'deferred') {
-                    query = query.where('status', '==', currentFilter);
-                } else if (currentFilter === 'problem' || currentFilter === 'translation') {
-                    query = query.where('type', '==', currentFilter);
-                } else {
-                    // suggestion tab
-                    query = query.where('type', '==', 'suggestion');
-                }
-
-                query.orderBy('createdAt', 'desc').limit(200).get().then(function (snapshot) {
+                rtdb.ref('suggestions').once('value').then(function (snapshot) {
                     allSuggestions = [];
-                    snapshot.forEach(function (doc) {
-                        var data = doc.data();
-                        data.id = doc.id;
+                    snapshot.forEach(function (child) {
+                        var data = child.val();
+                        data.id = child.key;
                         allSuggestions.push(data);
                     });
                     renderList();
@@ -1054,7 +1031,7 @@
 
                     if (searchBoxValue) {
                         const titleMatch = item.title && item.title.toLowerCase().indexOf(searchBoxValue) > -1;
-                        const descMatch = item.desc && item.desc.toLowerCase().indexOf(searchBoxValue) > -1;
+                        const descMatch = item.description && item.description.toLowerCase().indexOf(searchBoxValue) > -1;
                         if (!titleMatch && !descMatch) return false;
                     }
 
@@ -1093,12 +1070,12 @@
                     if (wA !== wB) return wB - wA; // Higher weight first
 
                     if (currentSort === 'popular') {
-                        const votesA = (a.upvotes || []).length;
-                        const votesB = (b.upvotes || []).length;
+                        const votesA = Object.keys(a.upvotes || {}).length;
+                        const votesB = Object.keys(b.upvotes || {}).length;
                         return votesB - votesA;
                     } else {
-                        const tA = (a.createdAt && a.createdAt.seconds) ? a.createdAt.seconds : 0;
-                        const tB = (b.createdAt && b.createdAt.seconds) ? b.createdAt.seconds : 0;
+                        const tA = typeof a.createdAt === 'number' ? a.createdAt : 0;
+                        const tB = typeof b.createdAt === 'number' ? b.createdAt : 0;
                         return tB - tA;
                     }
                 };
@@ -1119,7 +1096,7 @@
                     const filteredGlobal = allSearchSuggestions.filter(function (item) {
                         if (localIds.has(item.id)) return false; // Already in local
                         const titleMatch = item.title && item.title.toLowerCase().indexOf(searchBoxValue) > -1;
-                        const descMatch = item.desc && item.desc.toLowerCase().indexOf(searchBoxValue) > -1;
+                        const descMatch = item.description && item.description.toLowerCase().indexOf(searchBoxValue) > -1;
                         return titleMatch || descMatch;
                     });
                     
@@ -1149,12 +1126,14 @@
                     }
 
                     const id = data.id;
-                    const voteCount = (data.upvotes || []).length;
+                    const upvotesObj = data.upvotes || {};
+                    const upvoteUids = Object.keys(upvotesObj);
+                    const voteCount = upvoteUids.length;
                     const isDone = data.status === 'done';
                     const isProgress = data.status === 'in_progress';
                     const isAuthorPro = !!supporterUsers[data.authorName];
                     // SAFE ACCESS: No optional chaining
-                    const hasVoted = (data.upvotes || []).includes(currentUser ? currentUser.uid : null);
+                    const hasVoted = currentUser ? !!upvotesObj[currentUser.uid] : false;
 
                     const el = document.createElement('div');
                     el.className = 'suggestion-item' + (isDone ? ' done' : '') + (isAuthorPro ? ' supporter' : '');
@@ -1238,11 +1217,11 @@
 
                 let dateStr = window.t ? window.t('suggestions.msg.unknown_date') : 'Unknown Date';
                 // SAFE ACCESS: No optional chaining
-                if (data.createdAt && data.createdAt.toDate) {
+                if (typeof data.createdAt === 'number') {
                     dateStr = (function(d) {
                         var zd = (typeof rekindleGetZonedDate === 'function') ? rekindleGetZonedDate(d) : d;
                         return (zd.getMonth()+1) + '/' + zd.getDate() + '/' + zd.getFullYear();
-                    })(new Date(data.createdAt.toDate()));
+                    })(new Date(data.createdAt));
                 }
 
                 let isAuthorPro = !!supporterUsers[data.authorName];
@@ -1259,7 +1238,7 @@
                     document.getElementById('detail-meta').innerHTML += ` • ${window.t ? window.t('suggestions.label.app') : 'App'}: ${escapeHtml(data.app)}`;
                 }
 
-                updateVoteBtn(data.upvotes || []);
+                updateVoteBtn(data.upvotes || {});
                 updateAdminControls(data);
                 loadComments(id);
             };
@@ -1334,8 +1313,7 @@
                 }
 
                 showConfirmModal("Are you sure you want to delete this suggestion? This cannot be undone.", function () {
-                    const docRef = db.collection('suggestions').doc(currentSuggestionId);
-                    docRef.delete().then(function () {
+                    rtdb.ref('suggestions/' + currentSuggestionId).remove().then(function () {
                         // Remove from local cache
                         allSuggestions = allSuggestions.filter(s => s.id !== currentSuggestionId);
                         closeDetailView();
@@ -1351,8 +1329,7 @@
 
             window.setAdminStatus = function (status) {
                 if (!currentSuggestionId) return;
-                const docRef = db.collection('suggestions').doc(currentSuggestionId);
-                docRef.update({ status: status }).then(() => {
+                rtdb.ref('suggestions/' + currentSuggestionId).update({ status: status }).then(() => {
                     updateLocalItem(currentSuggestionId, { status: status });
                     closeDetailView();
                     // Optional: Switch to that tab
@@ -1367,17 +1344,15 @@
 
             window.toggleProStatus = function () {
                 if (!currentSuggestionId || !currentUser) return;
-                const docRef = db.collection('suggestions').doc(currentSuggestionId);
 
-                db.runTransaction(function (transaction) {
-                    return transaction.get(docRef).then(function (doc) {
-                        if (!doc.exists) throw "Document does not exist!";
-                        const newPro = !doc.data().isPro;
-                        transaction.update(docRef, { isPro: newPro });
-                        return newPro;
-                    });
-                }).then(function (newPro) {
-                    updateLocalItem(currentSuggestionId, { isPro: newPro });
+                rtdb.ref('suggestions/' + currentSuggestionId).once('value').then(function (snap) {
+                    if (!snap.exists()) throw "Suggestion does not exist!";
+                    const newPro = !snap.val().isPro;
+                    return rtdb.ref('suggestions/' + currentSuggestionId).update({ isPro: newPro });
+                }).then(function () {
+                    return rtdb.ref('suggestions/' + currentSuggestionId).once('value');
+                }).then(function (snap) {
+                    updateLocalItem(currentSuggestionId, { isPro: snap.val().isPro });
                 }).catch(function (err) {
                     console.error("Pro toggle failed", err);
                     showMessage("Error", "Failed to update Pro status.");
@@ -1387,28 +1362,25 @@
             window.cycleStatus = function () {
                 if (!currentSuggestionId || !currentUser) return;
 
-                const docRef = db.collection('suggestions').doc(currentSuggestionId);
+                rtdb.ref('suggestions/' + currentSuggestionId).once('value').then(function (snap) {
+                    if (!snap.exists()) throw "Suggestion does not exist";
 
-                db.runTransaction(function (transaction) {
-                    return transaction.get(docRef).then(function (doc) {
-                        if (!doc.exists) throw "Document does not exist";
+                    const currentStatus = snap.val().status || '';
+                    let newStatus = '';
 
-                        const currentStatus = doc.data().status || '';
-                        let newStatus = '';
+                    if (currentStatus === 'done') {
+                        newStatus = null; // Open
+                    } else if (currentStatus === 'in_progress') {
+                        newStatus = 'done';
+                    } else {
+                        newStatus = 'in_progress';
+                    }
 
-                        if (currentStatus === 'done') {
-                            newStatus = null; // Open
-                        } else if (currentStatus === 'in_progress') {
-                            newStatus = 'done';
-                        } else {
-                            newStatus = 'in_progress';
-                        }
-
-                        transaction.update(docRef, { status: newStatus });
-                        return newStatus;
-                    });
-                }).then(function (newStatus) {
-                    updateLocalItem(currentSuggestionId, { status: newStatus });
+                    return rtdb.ref('suggestions/' + currentSuggestionId).update({ status: newStatus });
+                }).then(function () {
+                    return rtdb.ref('suggestions/' + currentSuggestionId).once('value');
+                }).then(function (snap) {
+                    updateLocalItem(currentSuggestionId, { status: snap.val().status || null });
                     closeDetailView();
                 }).catch(function (err) {
                     console.error("Status update failed", err);
@@ -1461,7 +1433,7 @@
                 if (!currentSuggestionId) return;
                 const newCat = document.getElementById('edit-cat-select').value;
 
-                db.collection('suggestions').doc(currentSuggestionId).update({
+                rtdb.ref('suggestions/' + currentSuggestionId).update({
                     category: newCat
                 }).then(function () {
                     document.getElementById('edit-cat-overlay').style.display = 'none';
@@ -1501,7 +1473,7 @@
                     return;
                 }
 
-                db.collection('suggestions').doc(currentSuggestionId).update({
+                rtdb.ref('suggestions/' + currentSuggestionId).update({
                     title: newTitle,
                     description: newDesc
                 }).then(function () {
@@ -1521,28 +1493,25 @@
             window.toggleType = function () {
                 if (!currentSuggestionId || !currentUser) return;
 
-                const docRef = db.collection('suggestions').doc(currentSuggestionId);
+                rtdb.ref('suggestions/' + currentSuggestionId).once('value').then(function (snap) {
+                    if (!snap.exists()) {
+                        throw "Suggestion does not exist!";
+                    }
 
-                db.runTransaction(function (transaction) {
-                    return transaction.get(docRef).then(function (doc) {
-                        if (!doc.exists) {
-                            throw "Document does not exist!";
-                        }
+                    const currentType = snap.val().type || 'suggestion';
+                    let newType = 'suggestion';
+                    if (currentType === 'suggestion') newType = 'problem';
+                    else if (currentType === 'problem') newType = 'translation';
+                    else newType = 'suggestion';
 
-                        const currentType = doc.data().type || 'suggestion';
-                        let newType = 'suggestion';
-                        if (currentType === 'suggestion') newType = 'problem';
-                        else if (currentType === 'problem') newType = 'translation';
-                        else newType = 'suggestion';
-
-                        // Reset category to General/English when switching type to avoid mismatches
-                        const newCat = (newType === 'translation') ? 'English' : 'General';
-                        transaction.update(docRef, { type: newType, category: newCat });
-                        return newType;
-                    });
-                }).then(function (newType) {
+                    // Reset category to General/English when switching type to avoid mismatches
                     const newCat = (newType === 'translation') ? 'English' : 'General';
-                    updateLocalItem(currentSuggestionId, { type: newType, category: newCat });
+                    return rtdb.ref('suggestions/' + currentSuggestionId).update({ type: newType, category: newCat });
+                }).then(function () {
+                    return rtdb.ref('suggestions/' + currentSuggestionId).once('value');
+                }).then(function (snap) {
+                    const val = snap.val();
+                    updateLocalItem(currentSuggestionId, { type: val.type, category: val.category });
                     // Close detail view because item might disappear from current list
                     closeDetailView();
                     // Optional: Switch tab to follow the item?
@@ -1576,15 +1545,20 @@
                 document.getElementById('main-toolbar').style.display = 'flex';
                 document.getElementById('tab-bar').style.display = 'flex';
                 currentSuggestionId = null;
-                if (unsubscribeComments) unsubscribeComments();
+                if (commentsRefListener) {
+                    commentsRefListener.off('value');
+                    commentsRefListener = null;
+                }
             };
 
             // VOTE LOGIC
             window.updateVoteBtn = function (upvotes) {
                 const btn = document.getElementById('detail-vote-btn');
                 const countSpan = document.getElementById('detail-vote-count');
-                const count = upvotes.length;
-                const hasVoted = currentUser && upvotes.includes(currentUser.uid);
+                const upvotesObj = upvotes || {};
+                const upvoteUids = Object.keys(upvotesObj);
+                const count = upvoteUids.length;
+                const hasVoted = currentUser ? !!upvotesObj[currentUser.uid] : false;
 
                 countSpan.textContent = count;
                 if (hasVoted) {
@@ -1600,28 +1574,23 @@
                 const targetId = id || currentSuggestionId;
                 if (!targetId || !currentUser) return;
 
-                const docRef = db.collection('suggestions').doc(targetId);
+                const upvoteRef = rtdb.ref('suggestions/' + targetId + '/upvotes/' + currentUser.uid);
 
-                db.runTransaction(function (transaction) {
-                    return transaction.get(docRef).then(function (doc) {
-                        if (!doc.exists) {
-                            throw "Document does not exist!";
-                        }
-
-                        let upvotes = doc.data().upvotes || [];
-                        if (upvotes.includes(currentUser.uid)) {
-                            upvotes = upvotes.filter(function (uid) { return uid !== currentUser.uid; });
-                        } else {
-                            upvotes.push(currentUser.uid);
-                        }
-
-                        transaction.update(docRef, { upvotes: upvotes });
-                        return upvotes;
-                    });
-                }).then(function (newUpvotes) {
+                upvoteRef.once('value').then(function (snap) {
+                    if (snap.exists()) {
+                        return upvoteRef.remove();
+                    } else {
+                        return upvoteRef.set(true);
+                    }
+                }).then(function () {
+                    return rtdb.ref('suggestions/' + targetId + '/upvotes').once('value');
+                }).then(function (snap) {
+                    const newUpvotes = snap.val() || {};
                     if (targetId === currentSuggestionId) {
                         updateVoteBtn(newUpvotes);
                     }
+                    updateLocalItem(targetId, { upvotes: newUpvotes });
+                    renderList();
                 }).catch(function (err) { console.error("Vote failed", err); });
             };
 
@@ -1632,30 +1601,35 @@
                 const list = document.getElementById('detail-comments');
                 list.innerHTML = window.t ? window.t('suggestions.msg.loading_comments') : 'Loading comments...';
 
-                unsubscribeComments = db.collection('suggestions').doc(id).collection('comments')
-                    .orderBy('createdAt', 'asc')
-                    .onSnapshot(function (snapshot) {
-                        list.innerHTML = '';
-                        snapshot.forEach(function (doc) {
-                            const c = doc.data();
-                            const isCommentPro = !!supporterUsers[c.authorName];
-                            const crown = isCommentPro ? CROWN_SVG : '';
+                commentsRefListener = rtdb.ref('suggestions/' + id + '/comments');
+                commentsRefListener.on('value', function (snapshot) {
+                    list.innerHTML = '';
+                    const comments = [];
+                    snapshot.forEach(function (child) {
+                        comments.push(child.val());
+                    });
+                    comments.sort(function (a, b) {
+                        return (a.createdAt || 0) - (b.createdAt || 0);
+                    });
+                    comments.forEach(function (c) {
+                        const isCommentPro = !!supporterUsers[c.authorName];
+                        const crown = isCommentPro ? CROWN_SVG : '';
 
-                            // Dev Check
-                            const isDev = (c.authorEmail === 'ukiyo@rekindle.ink') || (c.authorName && c.authorName.toLowerCase() === 'ukiyo');
-                            const devBadge = isDev ? '<span class="dev-badge">DEV</span>' : '';
+                        // Dev Check
+                        const isDev = (c.authorEmail === 'ukiyo@rekindle.ink') || (c.authorName && c.authorName.toLowerCase() === 'ukiyo');
+                        const devBadge = isDev ? '<span class="dev-badge">DEV</span>' : '';
 
-                            const el = document.createElement('div');
-                            el.className = 'comment-item' + (isCommentPro ? ' supporter' : '');
-                            el.innerHTML = `
+                        const el = document.createElement('div');
+                        el.className = 'comment-item' + (isCommentPro ? ' supporter' : '');
+                        el.innerHTML = `
                             <span class="comment-author">${devBadge}${crown}${escapeHtml(c.authorName)}:</span>
                             <span>${escapeHtml(c.text)}</span>
                         `;
-                            list.appendChild(el);
-                        });
-                        // Auto scroll to bottom
-                        list.scrollTop = list.scrollHeight;
+                        list.appendChild(el);
                     });
+                    // Auto scroll to bottom
+                    list.scrollTop = list.scrollHeight;
+                });
             }
 
             window.postComment = function () {
@@ -1663,11 +1637,11 @@
                 const text = inp.value.trim();
                 if (!text || !currentSuggestionId || !currentUser) return;
 
-                const commentsRef = db.collection('suggestions').doc(currentSuggestionId).collection('comments');
-                commentsRef.where('authorUid', '==', currentUser.uid).get().then(function (snapshot) {
+                const commentsRef = rtdb.ref('suggestions/' + currentSuggestionId + '/comments');
+                commentsRef.once('value').then(function (snapshot) {
                     // Find first unused slot among _1, _2, _3
                     const usedIds = new Set();
-                    snapshot.forEach(function (doc) { usedIds.add(doc.id); });
+                    snapshot.forEach(function (child) { usedIds.add(child.key); });
                     let slot = null;
                     for (var i = 1; i <= 3; i++) {
                         if (!usedIds.has(currentUser.uid + '_' + i)) { slot = i; break; }
@@ -1676,13 +1650,13 @@
                         showMessage("Limit Reached", "You can only post 3 comments per suggestion.");
                         return;
                     }
-                    commentsRef.doc(currentUser.uid + '_' + slot).set({
+                    commentsRef.child(currentUser.uid + '_' + slot).set({
                         text: text,
                         authorName: currentUser.displayName || currentUser.email.split('@')[0],
                         authorUid: currentUser.uid,
                         authorEmail: currentUser.email,
                         isPro: isPro,
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        createdAt: firebase.database.ServerValue.TIMESTAMP
                     });
                     inp.value = '';
                 }).catch(function (err) {
@@ -1790,68 +1764,57 @@
                     btn.style.cursor = 'not-allowed';
                 }
 
-                // Check for duplicates
-                db.collection('suggestions')
-                    .where('title', '==', title)
-                    .where('description', '==', desc)
-                    .limit(1)
-                    .get()
-                    .then(function (snapshot) {
-                        if (!snapshot.empty) {
-                            showMessage("Duplicate", "A suggestion with this exact title and description already exists.");
-                            if (btn) {
-                                btn.disabled = false;
-                                btn.textContent = 'Submit';
-                                btn.style.opacity = '1';
-                                btn.style.cursor = 'pointer';
-                            }
-                            return;
-                        }
+                // Check for duplicates in already-loaded data
+                var isDuplicate = false;
+                for (var sIdx = 0; sIdx < allSuggestions.length; sIdx++) {
+                    if (allSuggestions[sIdx].title === title && allSuggestions[sIdx].description === desc) {
+                        isDuplicate = true;
+                        break;
+                    }
+                }
+                if (isDuplicate) {
+                    showMessage("Duplicate", "A suggestion with this exact title and description already exists.");
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = 'Submit';
+                        btn.style.opacity = '1';
+                        btn.style.cursor = 'pointer';
+                    }
+                    return;
+                }
 
-                        // No duplicate found, proceed to add
-                        db.collection('suggestions').add({
-                            title: title,
-                            description: desc,
-                            type: type,
-                            category: category,
-                            device: (type === 'problem') ? device : null,
-                            app: (type === 'translation') ? app : null,
-                            authorUid: currentUser.uid,
-                            authorName: currentUser.displayName || currentUser.email.split('@')[0],
-                            isPro: isPro,
-                            upvotes: [],
-                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                        }).then(function () {
-                            if (btn) {
-                                btn.disabled = false;
-                                btn.textContent = 'Submit';
-                                btn.style.opacity = '1';
-                                btn.style.cursor = 'pointer';
-                            }
-                            closeModal();
-                        }).catch(function (err) {
-                            console.error(err);
-                            showMessage("Error", "Error submitting. Content too long?");
-                            if (btn) {
-                                btn.disabled = false;
-                                btn.textContent = 'Submit';
-                                btn.style.opacity = '1';
-                                btn.style.cursor = 'pointer';
-                            }
-                        });
-                    })
-                    .catch(function (err) {
-                        console.error("Error checking for duplicates:", err);
-                        // Decide whether to fail open or closed. Let's fail open but warn.
-                        // Or fail closed to be safe? Safest is to just show error.
-                        showMessage("Error", "Could not verify uniqueness. Please try again.");
-                        if (btn) {
-                            btn.disabled = false;
-                            btn.textContent = 'Submit';
-                            btn.style.opacity = '1';
-                            btn.style.cursor = 'pointer';
-                        }
-                    });
+                // No duplicate found, proceed to add
+                var newRef = rtdb.ref('suggestions').push();
+                newRef.set({
+                    title: title,
+                    description: desc,
+                    type: type,
+                    category: category,
+                    device: (type === 'problem') ? device : null,
+                    app: (type === 'translation') ? app : null,
+                    authorUid: currentUser.uid,
+                    authorName: currentUser.displayName || currentUser.email.split('@')[0],
+                    isPro: isPro,
+                    upvotes: {},
+                    createdAt: firebase.database.ServerValue.TIMESTAMP
+                }).then(function () {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = 'Submit';
+                        btn.style.opacity = '1';
+                        btn.style.cursor = 'pointer';
+                    }
+                    closeModal();
+                }).catch(function (err) {
+                    console.error(err);
+                    showMessage("Error", "Error submitting. Content too long?");
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = 'Submit';
+                        btn.style.opacity = '1';
+                        btn.style.cursor = 'pointer';
+                    }
+                });
             };
 
             // MODAL SYSTEM
