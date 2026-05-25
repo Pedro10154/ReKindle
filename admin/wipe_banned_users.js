@@ -3,7 +3,9 @@ const fs = require('fs');
 
 // --- CONFIGURATION ---
 const SERVICE_ACCOUNT_PATH = '../service-account.json';
+const SOCIAL_SERVICE_ACCOUNT_PATH = '../service-account-social.json';
 const DATABASE_URL = 'https://rekindle-dd1fa-default-rtdb.firebaseio.com/';
+const SOCIAL_DATABASE_URL = 'https://rekindle-socials-default-rtdb.firebaseio.com/';
 
 // --- ARGS ---
 const args = process.argv.slice(2);
@@ -21,6 +23,26 @@ admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
     databaseURL: DATABASE_URL
 });
+
+// Initialize secondary app for social project (optional — falls back to main if key missing)
+let socialRtdb = admin.database();
+let socialDb = null;
+try {
+    if (fs.existsSync(SOCIAL_SERVICE_ACCOUNT_PATH)) {
+        const socialServiceAccount = require(SOCIAL_SERVICE_ACCOUNT_PATH);
+        const socialApp = admin.initializeApp({
+            credential: admin.credential.cert(socialServiceAccount),
+            databaseURL: SOCIAL_DATABASE_URL
+        }, 'social-admin');
+        socialRtdb = socialApp.database();
+        socialDb = socialApp.firestore();
+        console.log('Social admin app initialized.');
+    } else {
+        console.warn('Social service account not found at ' + SOCIAL_SERVICE_ACCOUNT_PATH + ' — using main project for social data.');
+    }
+} catch (e) {
+    console.warn('Failed to initialize social admin app:', e.message);
+}
 
 const rtdb = admin.database();
 
@@ -100,41 +122,44 @@ async function scanUsersPublic(bannedUids) {
 
 async function scanNeighbourhood(bannedUids) {
     console.log("Scanning Neighbourhood posts and comments...");
-    const postsRef = rtdb.ref('neighbourhood_posts');
-    const allPostsSnap = await postsRef.once('value');
     
-    if (!allPostsSnap.exists()) return;
-
-    allPostsSnap.forEach(postNode => {
-        const postId = postNode.key;
-        const post = postNode.val();
+    const allPostsSnap = await socialDb.collection('neighbourhood_posts').get();
+    
+    for (const postDoc of allPostsSnap.docs) {
+        const postId = postDoc.id;
+        const post = postDoc.data();
 
         if (bannedUids.has(post.uid)) {
             deletionTasks.push({
                 type: 'Neighbourhood Post',
                 id: postId,
                 summary: (post.text || '').substring(0, 50),
-                action: () => postsRef.child(postId).remove()
+                action: async () => {
+                    const commentsSnap = await socialDb.collection('neighbourhood_posts').doc(postId).collection('comments').get();
+                    const batch = socialDb.batch();
+                    commentsSnap.docs.forEach(c => batch.delete(c.ref));
+                    if (commentsSnap.docs.length > 0) await batch.commit();
+                    await socialDb.collection('neighbourhood_posts').doc(postId).delete();
+                }
             });
             // If the whole post is removed, we don't need to process its comments separately.
-            return;
+            continue;
         }
 
         // Process comments on non-banned users' posts
-        const comments = post.comments;
-        if (comments) {
-            Object.entries(comments).forEach(([commentId, commentData]) => {
-                if (bannedUids.has(commentData.uid)) {
-                    deletionTasks.push({
-                        type: 'Neighbourhood Comment',
-                        id: commentId,
-                        summary: (commentData.text || '').substring(0, 50),
-                        action: () => postsRef.child(`${postId}/comments/${commentId}`).remove()
-                    });
-                }
-            });
+        const commentsSnap = await postDoc.ref.collection('comments').get();
+        for (const commentDoc of commentsSnap.docs) {
+            const commentData = commentDoc.data();
+            if (bannedUids.has(commentData.uid)) {
+                deletionTasks.push({
+                    type: 'Neighbourhood Comment',
+                    id: commentDoc.id,
+                    summary: (commentData.text || '').substring(0, 50),
+                    action: () => commentDoc.ref.delete()
+                });
+            }
         }
-    });
+    }
 }
 
 async function executeDeletions() {

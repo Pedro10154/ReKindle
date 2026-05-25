@@ -4,7 +4,9 @@ const readline = require('readline');
 
 // --- CONFIGURATION ---
 const SERVICE_ACCOUNT_PATH = '../service-account.json';
+const SOCIAL_SERVICE_ACCOUNT_PATH = '../service-account-social.json';
 const DATABASE_URL = 'https://rekindle-dd1fa-default-rtdb.firebaseio.com/';
+const SOCIAL_DATABASE_URL = 'https://rekindle-socials-default-rtdb.firebaseio.com/';
 
 // --- ARGS ---
 const args = process.argv.slice(2);
@@ -29,6 +31,26 @@ admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
     databaseURL: DATABASE_URL
 });
+
+// Initialize secondary app for social project (optional — falls back to main if key missing)
+let socialRtdb = admin.database();
+let socialDb = null;
+try {
+    if (fs.existsSync(SOCIAL_SERVICE_ACCOUNT_PATH)) {
+        const socialServiceAccount = require(SOCIAL_SERVICE_ACCOUNT_PATH);
+        const socialApp = admin.initializeApp({
+            credential: admin.credential.cert(socialServiceAccount),
+            databaseURL: SOCIAL_DATABASE_URL
+        }, 'social-admin');
+        socialRtdb = socialApp.database();
+        socialDb = socialApp.firestore();
+        console.log('Social admin app initialized.');
+    } else {
+        console.warn('Social service account not found at ' + SOCIAL_SERVICE_ACCOUNT_PATH + ' — using main project for social data.');
+    }
+} catch (e) {
+    console.warn('Failed to initialize social admin app:', e.message);
+}
 
 const db = admin.firestore();
 const rtdb = admin.database();
@@ -138,7 +160,7 @@ async function resolveUser() {
 
 async function scanKindleChatRTDB() {
     console.log(`Scanning KindleChat (RTDB) for user='${targetUsername}' / uid='${targetUid}'...`);
-    const ref = rtdb.ref('kindlechat/messages');
+    const ref = socialRtdb.ref('kindlechat/messages');
 
     // Messages may use old-style 'user' (email handle) or new-style 'uid' (Firebase UID)
     const queries = [];
@@ -212,37 +234,36 @@ async function scanTopics() {
     console.log("Scanning Topics...");
 
     // 1. Topics created by user
-    const topicsRef = rtdb.ref('topics');
-    const topicsSnap = await topicsRef.orderByChild('authorId').equalTo(targetUid).once('value');
-
-    topicsSnap.forEach(child => {
+    const topicsSnap = await socialDb.collection('topics').where('authorId', '==', targetUid).get();
+    for (const doc of topicsSnap.docs) {
+        const topicId = doc.id;
         deletionTasks.push({
             type: 'Topic',
-            id: child.key,
-            summary: (child.val().title || '').substring(0, 50),
-            action: () => child.ref.remove()
-        });
-    });
-
-    // 2. Comments (Deep search required if not indexed by author)
-    // Structure: topic_comments/{topicId}/{commentId}
-    // We can't query all comments easily without a global index or deep scan.
-    // 'topic_comments' is the root for comments.
-    const commentsRoot = rtdb.ref('topic_comments');
-    const commentsSnap = await commentsRoot.once('value'); // Potentially heavy!
-
-    commentsSnap.forEach(topicNode => {
-        topicNode.forEach(commentNode => {
-            if (commentNode.val().authorId === targetUid) {
-                deletionTasks.push({
-                    type: 'Topic Comment',
-                    id: commentNode.key,
-                    summary: (commentNode.val().text || '').substring(0, 50),
-                    action: () => commentNode.ref.remove()
-                });
+            id: topicId,
+            summary: (doc.data().title || '').substring(0, 50),
+            action: async () => {
+                const commentsSnap = await socialDb.collection('topics').doc(topicId).collection('comments').get();
+                const batch = socialDb.batch();
+                commentsSnap.docs.forEach(c => batch.delete(c.ref));
+                if (commentsSnap.docs.length > 0) await batch.commit();
+                await socialDb.collection('topics').doc(topicId).delete();
             }
         });
-    });
+    }
+
+    // 2. Comments on other users' topics
+    const allTopicsSnap = await socialDb.collection('topics').get();
+    for (const topicDoc of allTopicsSnap.docs) {
+        const commentsSnap = await topicDoc.ref.collection('comments').where('authorId', '==', targetUid).get();
+        for (const commentDoc of commentsSnap.docs) {
+            deletionTasks.push({
+                type: 'Topic Comment',
+                id: commentDoc.id,
+                summary: (commentDoc.data().text || '').substring(0, 50),
+                action: () => commentDoc.ref.delete()
+            });
+        }
+    }
 }
 
 async function scanNeighbourhood() {
@@ -253,39 +274,36 @@ async function scanNeighbourhood() {
     console.log("Scanning Neighbourhood...");
 
     // 1. Posts
-    const postsRef = rtdb.ref('neighbourhood_posts');
-    const postsSnap = await postsRef.orderByChild('uid').equalTo(targetUid).once('value');
-
-    postsSnap.forEach(child => {
+    const postsSnap = await socialDb.collection('neighbourhood_posts').where('uid', '==', targetUid).get();
+    for (const doc of postsSnap.docs) {
+        const postId = doc.id;
         deletionTasks.push({
             type: 'Neighbourhood Post',
-            id: child.key,
-            summary: (child.val().text || '').substring(0, 50),
-            action: () => child.ref.remove()
+            id: postId,
+            summary: (doc.data().text || '').substring(0, 50),
+            action: async () => {
+                const commentsSnap = await socialDb.collection('neighbourhood_posts').doc(postId).collection('comments').get();
+                const batch = socialDb.batch();
+                commentsSnap.docs.forEach(c => batch.delete(c.ref));
+                if (commentsSnap.docs.length > 0) await batch.commit();
+                await socialDb.collection('neighbourhood_posts').doc(postId).delete();
+            }
         });
-    });
+    }
 
-    // 2. Comments (Nested in posts)
-    // Structure: neighbourhood_posts/{postId}/comments/{commentId}
-    // We iterate ALL posts to find comments. (Optimized queries not possible without flat structure)
-    // Since we already fetched specific posts, we need to fetch ALL posts now to find COMMENTS on others' posts.
-
-    const allPostsSnap = await postsRef.once('value'); // Heavy read
-    allPostsSnap.forEach(postNode => {
-        const comments = postNode.val().comments;
-        if (comments) {
-            Object.entries(comments).forEach(([commentId, commentData]) => {
-                if (commentData.uid === targetUid) {
-                    deletionTasks.push({
-                        type: 'Neighbourhood Comment',
-                        id: commentId,
-                        summary: (commentData.text || '').substring(0, 50),
-                        action: () => rtdb.ref(`neighbourhood_posts/${postNode.key}/comments/${commentId}`).remove()
-                    });
-                }
+    // 2. Comments on other users' posts
+    const allPostsSnap = await socialDb.collection('neighbourhood_posts').get();
+    for (const postDoc of allPostsSnap.docs) {
+        const commentsSnap = await postDoc.ref.collection('comments').where('uid', '==', targetUid).get();
+        for (const commentDoc of commentsSnap.docs) {
+            deletionTasks.push({
+                type: 'Neighbourhood Comment',
+                id: commentDoc.id,
+                summary: (commentDoc.data().text || '').substring(0, 50),
+                action: () => commentDoc.ref.delete()
             });
         }
-    });
+    }
 }
 
 // --- EXECUTION ---
