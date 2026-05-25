@@ -1312,14 +1312,14 @@
         var inputLower = input.toLowerCase();
 
         if (input.length > 20 && !input.includes(' ') && !input.includes('@')) {
-            var snap = await rtdb.ref('users_public/' + input).once('value');
+            var snap = await socialRtdb.ref('users_public/' + input).once('value');
             if (snap.exists()) {
                 var d = snap.val();
                 return { uid: input, emailHandle: d.email ? d.email.split('@')[0] : input, displayName: d.displayName || input };
             }
         }
 
-        var allSnap = await rtdb.ref('users_public').once('value');
+        var allSnap = await socialRtdb.ref('users_public').once('value');
         var users = allSnap.val() || {};
         for (var pair of Object.entries(users)) {
             var uid = pair[0], d = pair[1];
@@ -1993,7 +1993,7 @@
 
             // Try direct UID lookup
             if (input.length > 20 && !input.includes(' ') && !input.includes('@')) {
-                var directSnap = await rtdb.ref('users_public/' + input).once('value');
+                var directSnap = await socialRtdb.ref('users_public/' + input).once('value');
                 if (directSnap.exists()) {
                     uid = input;
                     var d = directSnap.val();
@@ -2004,7 +2004,7 @@
 
             // Scan users_public by displayName, username, or email
             if (!uid) {
-                var allSnap = await rtdb.ref('users_public').once('value');
+                var allSnap = await socialRtdb.ref('users_public').once('value');
                 var allUsers = allSnap.val() || {};
                 var inputLower = input.toLowerCase();
                 for (var entry of Object.entries(allUsers)) {
@@ -2025,7 +2025,7 @@
                 if (!stripeSnap.empty) {
                     var stripeDoc = stripeSnap.docs[0];
                     uid = stripeDoc.id;
-                    var pubSnap = await rtdb.ref('users_public/' + uid).once('value');
+                    var pubSnap = await socialRtdb.ref('users_public/' + uid).once('value');
                     var pubData = pubSnap.val() || {};
                     displayName = pubData.displayName || '';
                     email = pubData.email || '';

@@ -632,6 +632,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-functions-compat.js"></script>
     <script src="time.js"></script>
     <script src="theme.js?v=17"></script>
     <script src="bad_words.js?v=4"></script>
@@ -1053,9 +1054,32 @@
             databaseURL: "https://rekindle-dd1fa-default-rtdb.firebaseio.com"
         };
 
+        const socialConfig = {
+            apiKey: "AIzaSyBy_n32McwWZidFn28-1eHYBTYjvVDH_Wk",
+            authDomain: "rekindle-socials.firebaseapp.com",
+            projectId: "rekindle-socials",
+            storageBucket: "rekindle-socials.firebasestorage.app",
+            messagingSenderId: "1004814440293",
+            appId: "1:1004814440293:web:abc94996445575be9b338c",
+            databaseURL: "https://rekindle-socials-default-rtdb.firebaseio.com"
+        };
+
         firebase.initializeApp(firebaseConfig);
+        const socialApp = firebase.initializeApp(socialConfig, 'social');
         const auth = firebase.auth();
-        const db = firebase.database(); // RTDB
+        const db = firebase.database(); // RTDB (main project)
+        const socialRtdb = socialApp.database(); // RTDB (social project)
+        const mainDb = firebase.firestore();
+        try {
+            if (mainDb.settings) {
+                mainDb.settings({
+                    experimentalForceLongPolling: true,
+                    merge: true
+                });
+            }
+        } catch (e) { console.warn('Firestore settings error:', e); }
+        const socialDb = socialApp.firestore();
+        const socialAuth = socialApp.auth();
 
         // Mock Kindle+ check (In real app, check claims or subscription status)
         // For now, let's treat everyone as potentially plus if they have the flag, 
@@ -1117,13 +1141,7 @@
         let supporterUsers = {}; // Store supporter usernames as object for ES5 compatibility
 
         function fetchSupporters() {
-            const fs = firebase.firestore();
-            try {
-                if (fs.settings) {
-                    fs.settings({ experimentalForceLongPolling: true });
-                }
-            } catch (e) { }
-            return fs.collection('config').doc('supporters').get().then(function (doc) {
+            return mainDb.collection('config').doc('supporters').get().then(function (doc) {
                 if (doc.exists) {
                     var data = doc.data();
                     supporterUsers = {};
@@ -1198,24 +1216,33 @@
                 // Initial Pro check from storage
                 isPlus = localStorage.getItem('rekindle_is_pro') !== 'false';
 
-                fetchSupporters().then(() => {
-                    renderSuggestedInterests();
-                    initAdminTools(user);
+                // Authenticate with social project before loading social data
+                const getSocialToken = firebase.functions().httpsCallable('getSocialToken');
+                getSocialToken({}).then((result) => {
+                    return socialAuth.signInWithCustomToken(result.data.token);
+                }).then(() => {
+                    fetchSupporters().then(() => {
+                        renderSuggestedInterests();
+                        initAdminTools(user);
 
-                    // DEEP LINK CHECK
-                    const params = new URLSearchParams(window.location.search);
-                    const uid = params.get('uid');
-                    if (uid) {
-                        // Switch to 'Find' tab which contains the view profile logic
-                        // We actually need to load the user profile into the view
-                        switchTab('list');
-                        loadOtherUserProfile(uid);
-                    } else {
-                        loadPosts();
-                    }
+                        // DEEP LINK CHECK
+                        const params = new URLSearchParams(window.location.search);
+                        const uid = params.get('uid');
+                        if (uid) {
+                            // Switch to 'Find' tab which contains the view profile logic
+                            // We actually need to load the user profile into the view
+                            switchTab('list');
+                            loadOtherUserProfile(uid);
+                        } else {
+                            loadPosts();
+                        }
+                    });
+                }).catch((err) => {
+                    console.error('Social auth failed:', err);
                 });
             } else {
                 document.getElementById('login-overlay').style.display = 'flex';
+                if (socialAuth) socialAuth.signOut();
             }
         });
 
@@ -1350,7 +1377,7 @@
 
             // Write to /users_public/{uid}
             // Use update to avoid overwriting other nodes
-            db.ref('users_public/' + currentUser.uid).update(profileData)
+            socialRtdb.ref('users_public/' + currentUser.uid).update(profileData)
                 .then(() => {
                     // Also update user_cards mirror for fast avatar lookups
                     const username = (currentUser.email || currentUser.uid).split('@')[0];
@@ -1377,7 +1404,7 @@
         function loadMyProfile() {
             if (!currentUser) return;
             Promise.all([
-                db.ref('users_public/' + currentUser.uid).once('value'),
+                socialRtdb.ref('users_public/' + currentUser.uid).once('value'),
                 db.ref('user_cards/' + currentUser.uid).once('value')
             ]).then(([publicSnap, cardSnap]) => {
                     var data = publicSnap.val();
@@ -1392,7 +1419,7 @@
                             createdAt: firebase.database.ServerValue.TIMESTAMP,
                             lastActive: firebase.database.ServerValue.TIMESTAMP
                         };
-                        db.ref('users_public/' + currentUser.uid).set(myProfile);
+                        socialRtdb.ref('users_public/' + currentUser.uid).set(myProfile);
                         // Also create user_cards mirror
                         const username = (currentUser.email || currentUser.uid).split('@')[0];
                         db.ref('user_cards/' + currentUser.uid).set({
@@ -1410,7 +1437,7 @@
                         // Ensure email is synced if missing
                         if (!myProfile.email && currentUser.email) {
                             myProfile.email = currentUser.email;
-                            db.ref('users_public/' + currentUser.uid).update({ email: currentUser.email });
+                            socialRtdb.ref('users_public/' + currentUser.uid).update({ email: currentUser.email });
                         }
                         // Ensure user_cards mirror exists
                         const username = (currentUser.email || currentUser.uid).split('@')[0];
@@ -1480,7 +1507,7 @@
             }
 
             Promise.all([
-                db.ref('users_public/' + uid).once('value'),
+                socialRtdb.ref('users_public/' + uid).once('value'),
                 db.ref('user_cards/' + uid).once('value')
             ]).then(([publicSnap, cardSnap]) => {
                 const user = publicSnap.val();
@@ -2004,7 +2031,7 @@
 
             // Fetch user data
             Promise.all([
-                db.ref('users_public/' + uid).once('value'),
+                socialRtdb.ref('users_public/' + uid).once('value'),
                 db.ref('user_cards/' + uid).once('value')
             ]).then(([publicSnap, cardSnap]) => {
                 if (publicSnap.exists()) {
@@ -2279,6 +2306,13 @@
             return age;
         }
 
+        function getTimestampMillis(ts) {
+            if (!ts) return 0;
+            if (typeof ts === 'number') return ts;
+            if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+            return new Date(ts).getTime();
+        }
+
         // --- POSTS FEATURE ---
         let postsListener = null;
         let recentPosts = [];
@@ -2290,6 +2324,7 @@
         const PAGE_SIZE = 10;
         const renderedPostKeys = new Set();
         let oldestPostKey = null;
+        let oldestPostDoc = null;
         let allPostsLoaded = false;
         let loadingMore = false;
 
@@ -2316,58 +2351,69 @@
             feed.innerHTML = '';
             renderedPostKeys.clear();
             oldestPostKey = null;
+            oldestPostDoc = null;
             allPostsLoaded = false;
             loadingMore = false;
 
-            const postsRef = db.ref('neighbourhood_posts').limitToLast(PAGE_SIZE);
-            let initialDone = false;
+            const postsQuery = socialDb.collection('neighbourhood_posts')
+                .orderBy('timestamp', 'desc')
+                .limit(PAGE_SIZE);
+            let initialSnapshotDone = false;
 
-            postsRef.once('value', snapshot => {
-                loader.style.display = 'none';
-                recentPosts = [];
-                if (snapshot.exists()) {
-                    snapshot.forEach(child => {
-                        recentPosts.push({ id: child.key, ...child.val() });
-                        renderedPostKeys.add(child.key);
-                    });
-                    recentPosts.reverse();
-                    if (recentPosts.length > 0) oldestPostKey = recentPosts[recentPosts.length - 1].id;
-                    if (recentPosts.length < PAGE_SIZE) allPostsLoaded = true;
-                    recentPosts.forEach(post => renderPostItem(post, feed));
+            postsListener = postsQuery.onSnapshot(snapshot => {
+                if (!initialSnapshotDone) {
+                    loader.style.display = 'none';
+                    recentPosts = [];
+                    const docs = snapshot.docs;
+                    if (docs.length > 0) {
+                        docs.forEach(doc => {
+                            const post = { id: doc.id, ...doc.data() };
+                            recentPosts.push(post);
+                            renderedPostKeys.add(doc.id);
+                        });
+                        if (recentPosts.length > 0) {
+                            oldestPostKey = recentPosts[recentPosts.length - 1].id;
+                            oldestPostDoc = docs[docs.length - 1];
+                        }
+                        if (docs.length < PAGE_SIZE) allPostsLoaded = true;
+                        recentPosts.forEach(post => renderPostItem(post, feed));
+                    } else {
+                        feed.innerHTML = '<div style="text-align:center; color:#666;" data-empty="true">No posts yet. Be the first!</div>';
+                        allPostsLoaded = true;
+                    }
+                    updateEndOfFeed(feed);
+                    initialSnapshotDone = true;
                 } else {
-                    feed.innerHTML = '<div style="text-align:center; color:#666;" data-empty="true">No posts yet. Be the first!</div>';
-                    allPostsLoaded = true;
+                    snapshot.docChanges().forEach(change => {
+                        const post = { id: change.doc.id, ...change.doc.data() };
+                        if (change.type === 'added') {
+                            if (!renderedPostKeys.has(change.doc.id)) {
+                                renderedPostKeys.add(change.doc.id);
+                                recentPosts.unshift(post);
+                                const emptyEl = feed.querySelector('[data-empty]');
+                                if (emptyEl) emptyEl.remove();
+                                renderPostItem(post, feed, true);
+                            }
+                        } else if (change.type === 'removed') {
+                            renderedPostKeys.delete(change.doc.id);
+                            recentPosts = recentPosts.filter(p => p.id !== change.doc.id);
+                            const card = feed.querySelector('[data-post-id="' + change.doc.id + '"]');
+                            if (card) card.remove();
+                            if (commentListeners.has(change.doc.id)) {
+                                const { unsubscribe } = commentListeners.get(change.doc.id);
+                                unsubscribe();
+                                commentListeners.delete(change.doc.id);
+                            }
+                            if (recentPosts.length === 0) {
+                                feed.innerHTML = '<div style="text-align:center; color:#666;" data-empty="true">No posts yet. Be the first!</div>';
+                            }
+                        }
+                    });
                 }
-                updateEndOfFeed(feed);
-                initialDone = true;
+            }, err => {
+                console.error('[Posts] snapshot error:', err);
+                loader.style.display = 'none';
             });
-
-            postsRef.on('child_added', snap => {
-                if (!initialDone || renderedPostKeys.has(snap.key)) return;
-                renderedPostKeys.add(snap.key);
-                const post = { id: snap.key, ...snap.val() };
-                recentPosts.unshift(post);
-                const emptyEl = feed.querySelector('[data-empty]');
-                if (emptyEl) emptyEl.remove();
-                renderPostItem(post, feed, true);
-            });
-
-            postsRef.on('child_removed', snap => {
-                renderedPostKeys.delete(snap.key);
-                recentPosts = recentPosts.filter(p => p.id !== snap.key);
-                const card = feed.querySelector('[data-post-id="' + snap.key + '"]');
-                if (card) card.remove();
-                if (commentListeners.has(snap.key)) {
-                    const { ref, fn } = commentListeners.get(snap.key);
-                    ref.off('value', fn);
-                    commentListeners.delete(snap.key);
-                }
-                if (recentPosts.length === 0) {
-                    feed.innerHTML = '<div style="text-align:center; color:#666;" data-empty="true">No posts yet. Be the first!</div>';
-                }
-            });
-
-            postsListener = postsRef;
 
             // Infinite scroll — listen on the scrollable view panel
             const panel = document.getElementById('view-posts');
@@ -2383,7 +2429,7 @@
         }
 
         async function loadMorePosts() {
-            if (loadingMore || allPostsLoaded || !oldestPostKey) return;
+            if (loadingMore || allPostsLoaded || !oldestPostDoc) return;
             loadingMore = true;
 
             const feed = document.getElementById('posts-feed');
@@ -2391,26 +2437,25 @@
             if (endEl) endEl.innerText = 'Loading...';
 
             try {
-                const snap = await db.ref('neighbourhood_posts')
-                    .orderByKey()
-                    .endAt(oldestPostKey)
-                    .limitToLast(PAGE_SIZE + 1)
-                    .once('value');
+                const snap = await socialDb.collection('neighbourhood_posts')
+                    .orderBy('timestamp', 'desc')
+                    .startAfter(oldestPostDoc)
+                    .limit(PAGE_SIZE)
+                    .get();
 
                 const olderPosts = [];
-                snap.forEach(child => {
-                    // endAt includes the cursor key itself — skip it and already-rendered keys
-                    if (child.key !== oldestPostKey && !renderedPostKeys.has(child.key)) {
-                        olderPosts.push({ id: child.key, ...child.val() });
-                        renderedPostKeys.add(child.key);
+                snap.forEach(doc => {
+                    if (!renderedPostKeys.has(doc.id)) {
+                        olderPosts.push({ id: doc.id, ...doc.data() });
+                        renderedPostKeys.add(doc.id);
                     }
                 });
-                olderPosts.reverse();
 
                 if (olderPosts.length === 0) {
                     allPostsLoaded = true;
                 } else {
                     if (olderPosts.length < PAGE_SIZE) allPostsLoaded = true;
+                    oldestPostDoc = snap.docs[snap.docs.length - 1];
                     oldestPostKey = olderPosts[olderPosts.length - 1].id;
                     olderPosts.forEach(post => renderPostItem(post, feed));
                 }
@@ -2466,7 +2511,7 @@
             }
 
             // Compute translation and admin controls (user-independent)
-            const date = new Date(post.timestamp);
+            const date = new Date(getTimestampMillis(post.timestamp));
             const timeStr = window.rekindleFormatTime ? window.rekindleFormatTime(date, { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const avatarId = 'post-av-' + post.id;
 
@@ -2610,19 +2655,21 @@
 
             // Detach any existing listener for this post before attaching a new one
             if (commentListeners.has(postId)) {
-                const { ref, fn } = commentListeners.get(postId);
-                ref.off('value', fn);
+                const { unsubscribe } = commentListeners.get(postId);
+                unsubscribe();
                 commentListeners.delete(postId);
             }
 
-            const commentsRef = db.ref('neighbourhood_posts/' + postId + '/comments').orderByChild('timestamp').limitToLast(100);
-            const commentFn = commentsRef.on('value', async snapshot => {
+            const commentsRef = socialDb.collection('neighbourhood_posts').doc(postId).collection('comments')
+                .orderBy('timestamp', 'desc')
+                .limit(100);
+            const unsubscribe = commentsRef.onSnapshot(snapshot => {
                 listContainer.innerHTML = '';
-                if (!snapshot.exists()) return;
+                if (snapshot.empty) return;
 
                 const comments = [];
-                snapshot.forEach(child => {
-                    comments.push({ id: child.key, ...child.val() });
+                snapshot.forEach(doc => {
+                    comments.push({ id: doc.id, ...doc.data() });
                 });
 
                 // Update count in toggle
@@ -2631,16 +2678,19 @@
                     countEl.innerText = comments.length > 0 ? ' (' + comments.length + ')' : '';
                 }
 
+                // Render oldest first
+                comments.reverse();
+
                 // Render each comment
                 for (const comment of comments) {
                     renderComment(comment, postId, listContainer);
                 }
             });
-            commentListeners.set(postId, { ref: commentsRef, fn: commentFn });
+            commentListeners.set(postId, { unsubscribe: unsubscribe });
         }
 
         function renderComment(comment, postId, container) {
-            const date = new Date(comment.timestamp);
+            const date = new Date(getTimestampMillis(comment.timestamp));
             const timeStr = window.rekindleFormatTime ? window.rekindleFormatTime(date, { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
             // Profanity filter
@@ -2713,10 +2763,10 @@
 
             input.disabled = true;
 
-            db.ref('neighbourhood_posts/' + postId + '/comments').push({
+            socialDb.collection('neighbourhood_posts').doc(postId).collection('comments').add({
                 uid: currentUser.uid,
                 text: text,
-                timestamp: firebase.database.ServerValue.TIMESTAMP
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
             }).then(() => {
                 input.value = '';
                 input.disabled = false;
@@ -2792,9 +2842,9 @@
             const isMod = isCurrentUserMod && isModeratorMode;
             if (isMod) {
                 showModDeleteModal("Delete this comment?", (reason) => {
-                    db.ref('neighbourhood_posts/' + postId + '/comments/' + commentId).once('value').then(snap => {
-                        const commentData = snap.val();
-                        if (!commentData) return;
+                    socialDb.collection('neighbourhood_posts').doc(postId).collection('comments').doc(commentId).get().then(doc => {
+                        if (!doc.exists) return;
+                        const commentData = doc.data();
                         const logKey = db.ref('mod_actions').push().key;
                         const updates = {};
                         updates['mod_actions/' + logKey] = {
@@ -2810,14 +2860,14 @@
                             postId: postId,
                             undone: false
                         };
-                        updates['neighbourhood_posts/' + postId + '/comments/' + commentId] = null;
-                        db.ref().update(updates)
-                            .catch(e => showAlertModal("Delete failed: " + e.message, "Error"));
+                        db.ref().update(updates).then(() => {
+                            return socialDb.collection('neighbourhood_posts').doc(postId).collection('comments').doc(commentId).delete();
+                        }).catch(e => showAlertModal("Delete failed: " + e.message, "Error"));
                     });
                 });
             } else {
                 showConfirmModal("Delete this comment?", () => {
-                    db.ref('neighbourhood_posts/' + postId + '/comments/' + commentId).remove()
+                    socialDb.collection('neighbourhood_posts').doc(postId).collection('comments').doc(commentId).delete()
                         .catch(e => showAlertModal("Delete failed: " + e.message, "Error"));
                 });
             }
@@ -2878,82 +2928,47 @@
             const btn = document.querySelector('button[onclick="submitPost()"]');
             if (btn) btn.disabled = true;
 
-            if (typeof TRANSLATION_WORKER_URL !== 'undefined' && TRANSLATION_WORKER_URL) {
-                currentUser.getIdToken().then(function (token) {
-                    fetch(TRANSLATION_WORKER_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': 'Bearer ' + token
-                        },
-                        body: JSON.stringify({
-                            uid: currentUser.uid,
-                            text: text,
-                            app: 'neighbourhood'
-                        })
-                    })
-                        .then(function (res) {
-                            if (!res.ok) throw new Error("Worker Error " + res.status);
-                            return res.json();
-                        })
-                        .then(function (data) {
-                            if (data.error) throw new Error(data.error);
-                            input.value = '';
-                            if (btn) btn.disabled = false;
-                        })
-                        .catch(function (err) {
-                            console.error("Worker failed, falling back to direct write:", err);
-                            db.ref('neighbourhood_posts').push({
+            // Write directly to Firestore first (primary source of truth)
+            socialDb.collection('neighbourhood_posts').add({
+                uid: currentUser.uid,
+                text: text,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(function (docRef) {
+                input.value = '';
+                if (btn) btn.disabled = false;
+
+                // Request translations asynchronously via worker
+                if (typeof TRANSLATION_WORKER_URL !== 'undefined' && TRANSLATION_WORKER_URL) {
+                    var tokenSource = socialAuth.currentUser || currentUser;
+                    tokenSource.getIdToken(true).then(function (token) {
+                        fetch(TRANSLATION_WORKER_URL, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ' + token
+                            },
+                            body: JSON.stringify({
                                 uid: currentUser.uid,
                                 text: text,
-                                timestamp: firebase.database.ServerValue.TIMESTAMP
-                            }).then(() => {
-                                input.value = '';
-                                if (btn) btn.disabled = false;
-                            }).catch(firebaseErr => {
-                                if (firebaseErr && firebaseErr.code === 'PERMISSION_DENIED') {
-                                    showAlertModal("You are temporarily restricted from posting.");
-                                } else {
-                                    showAlertModal("Error posting: " + firebaseErr.message);
-                                }
-                                if (btn) btn.disabled = false;
-                            });
+                                msgId: docRef.id,
+                                app: 'neighbourhood',
+                                translateOnly: true
+                            })
+                        }).catch(function (err) {
+                            console.warn('Translation request failed:', err);
                         });
-                }).catch(function(err) {
-                    console.error("Could not get auth token:", err);
-                    db.ref('neighbourhood_posts').push({
-                        uid: currentUser.uid,
-                        text: text,
-                        timestamp: firebase.database.ServerValue.TIMESTAMP
-                    }).then(() => {
-                        input.value = '';
-                        if (btn) btn.disabled = false;
-                    }).catch(firebaseErr => {
-                        if (firebaseErr && firebaseErr.code === 'PERMISSION_DENIED') {
-                            showAlertModal("You are temporarily restricted from posting.");
-                        } else {
-                            showAlertModal("Error posting: " + firebaseErr.message);
-                        }
-                        if (btn) btn.disabled = false;
+                    }).catch(function (err) {
+                        console.warn('Could not get token for translation:', err);
                     });
-                });
-            } else {
-                db.ref('neighbourhood_posts').push({
-                    uid: currentUser.uid,
-                    text: text,
-                    timestamp: firebase.database.ServerValue.TIMESTAMP
-                }).then(() => {
-                    input.value = '';
-                    if (btn) btn.disabled = false;
-                }).catch(err => {
-                    if (err && err.code === 'PERMISSION_DENIED') {
-                        showAlertModal("You are temporarily restricted from posting.");
-                    } else {
-                        showAlertModal("Error posting: " + err.message);
-                    }
-                    if (btn) btn.disabled = false;
-                });
-            }
+                }
+            }).catch(function (err) {
+                if (err && err.code === 'PERMISSION_DENIED') {
+                    showAlertModal("You are temporarily restricted from posting.");
+                } else {
+                    showAlertModal("Error posting: " + err.message);
+                }
+                if (btn) btn.disabled = false;
+            });
         }
 
         // --- ADMIN ACTIONS & TRANSLATION ---
@@ -3003,7 +3018,8 @@
 
             console.log("Reprocessing post:", postId);
 
-            currentUser.getIdToken().then(function (token) {
+            var tokenSource = socialAuth.currentUser || currentUser;
+            tokenSource.getIdToken(true).then(function (token) {
                 fetch(TRANSLATION_WORKER_URL, {
                     method: 'POST',
                     headers: {
@@ -3039,9 +3055,9 @@
             const isMod = isCurrentUserMod && isModeratorMode;
             if (isMod) {
                 showModDeleteModal("Are you sure you want to delete this post?", (reason) => {
-                    db.ref('neighbourhood_posts/' + id).once('value').then(snap => {
-                        const postData = snap.val();
-                        if (!postData) return;
+                    socialDb.collection('neighbourhood_posts').doc(id).get().then(doc => {
+                        if (!doc.exists) return;
+                        const postData = doc.data();
                         const logKey = db.ref('mod_actions').push().key;
                         const updates = {};
                         updates['mod_actions/' + logKey] = {
@@ -3056,14 +3072,14 @@
                             savedData: postData,
                             undone: false
                         };
-                        updates['neighbourhood_posts/' + id] = null;
-                        db.ref().update(updates)
-                            .catch(e => showAlertModal("Delete failed: " + e.message, "Error"));
+                        db.ref().update(updates).then(() => {
+                            return socialDb.collection('neighbourhood_posts').doc(id).delete();
+                        }).catch(e => showAlertModal("Delete failed: " + e.message, "Error"));
                     });
                 });
             } else {
                 showConfirmModal("Are you sure you want to delete this post?", () => {
-                    db.ref('neighbourhood_posts/' + id).remove()
+                    socialDb.collection('neighbourhood_posts').doc(id).delete()
                         .catch(e => showAlertModal("Delete failed: " + e.message, "Error"));
                 });
             }
@@ -3076,7 +3092,7 @@
 
             showPromptModal("Edit Post Content:", post.text, (newText) => {
                 if (newText !== null && newText.trim() !== "") {
-                    db.ref('neighbourhood_posts/' + id).update({ text: newText.trim() })
+                    socialDb.collection('neighbourhood_posts').doc(id).update({ text: newText.trim() })
                         .catch(e => showAlertModal("Update failed: " + e.message, "Error"));
                 }
             });

@@ -6,10 +6,68 @@
  * 1. Receives chat message payload via POST
  * 2. Checks if message is an ASCII emoji (skips translation if so)
  * 3. Translates text to English using MyMemory API if needed
- * 4. Writes final record (original + translation) to Firebase RTDB
+ * 4. Writes final record (original + translation) to Firebase RTDB or Firestore
  */
 
-// FIREBASE_URL removed, we use dynamic base URL
+// FIRESTORE helpers for Neighbourhood (migrated from RTDB to Firestore)
+function toFirestoreValue(value) {
+    if (value === null || value === undefined) return { nullValue: null };
+    if (typeof value === 'string') return { stringValue: value };
+    if (typeof value === 'boolean') return { booleanValue: value };
+    if (typeof value === 'number') {
+        if (Number.isInteger(value)) return { integerValue: String(value) };
+        return { doubleValue: value };
+    }
+    if (value instanceof Date) return { timestampValue: value.toISOString() };
+    if (Array.isArray(value)) return { arrayValue: { values: value.map(toFirestoreValue) } };
+    if (typeof value === 'object') {
+        const fields = {};
+        for (const [k, v] of Object.entries(value)) fields[k] = toFirestoreValue(v);
+        return { mapValue: { fields } };
+    }
+    return { stringValue: String(value) };
+}
+
+async function firestorePatch(docPath, data, idToken) {
+    const mask = Object.keys(data).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
+    const url = `https://firestore.googleapis.com/v1/projects/rekindle-socials/databases/(default)/documents/${docPath}?${mask}`;
+    const fields = {};
+    for (const [key, value] of Object.entries(data)) fields[key] = toFirestoreValue(value);
+    const resp = await fetch(url, {
+        method: 'PATCH',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ fields })
+    });
+    if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`Firestore patch failed (${resp.status}): ${errText}`);
+    }
+}
+
+async function firestoreCreate(collectionPath, data, idToken) {
+    const url = `https://firestore.googleapis.com/v1/projects/rekindle-socials/databases/(default)/documents/${collectionPath}`;
+    const fields = {};
+    for (const [key, value] of Object.entries(data)) fields[key] = toFirestoreValue(value);
+    const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ fields })
+    });
+    if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`Firestore create failed (${resp.status}): ${errText}`);
+    }
+    const json = await resp.json();
+    // Extract document ID from name like "projects/.../documents/collection/docId"
+    const parts = (json.name || '').split('/');
+    return parts[parts.length - 1];
+}
 
 // EMBEDDED EMOJI DATABASE (From emojis.js)
 const ASCII_EMOJIS = {
@@ -244,9 +302,9 @@ async function handleRequest(request) {
 
         console.log("Worker received payload:", JSON.stringify(payload));
 
-        let baseFirebaseUrl = "https://rekindle-dd1fa-default-rtdb.firebaseio.com/kindlechat/messages";
+        let baseFirebaseUrl = "https://rekindle-socials-default-rtdb.firebaseio.com/kindlechat/messages";
         if (app === 'neighbourhood') {
-            baseFirebaseUrl = "https://rekindle-dd1fa-default-rtdb.firebaseio.com/neighbourhood_posts";
+            baseFirebaseUrl = "https://rekindle-socials-default-rtdb.firebaseio.com/neighbourhood_posts";
         }
 
         if (translateOnly && msgId) {
@@ -256,18 +314,20 @@ async function handleRequest(request) {
                 return new Response(JSON.stringify({ success: true, skipped: true }), { status: 200, headers });
             }
 
-            let patchUrl = `${baseFirebaseUrl}/${msgId}/translation.json`;
-            if (token) patchUrl += `?auth=${token}`;
-
-            const firebaseResp = await fetch(patchUrl, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(translatedText)
-            });
-
-            if (!firebaseResp.ok) {
-                const errText = await firebaseResp.text();
-                throw new Error(`Firebase translation patch failed (${firebaseResp.status}): ${errText}`);
+            if (app === 'neighbourhood') {
+                await firestorePatch(`neighbourhood_posts/${msgId}`, { translation: translatedText }, token);
+            } else {
+                let patchUrl = `${baseFirebaseUrl}/${msgId}/translation.json`;
+                if (token) patchUrl += `?auth=${token}`;
+                const firebaseResp = await fetch(patchUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(translatedText)
+                });
+                if (!firebaseResp.ok) {
+                    const errText = await firebaseResp.text();
+                    throw new Error(`Firebase translation patch failed (${firebaseResp.status}): ${errText}`);
+                }
             }
 
             return new Response(JSON.stringify({ success: true, msgId, translation: translatedText }), { status: 200, headers });
@@ -277,22 +337,26 @@ async function handleRequest(request) {
             // REPROCESS LOGIC (admin only)
             let translatedText = await translateToAllLanguages(text);
 
-            // Update specific message
-            let updateUrl = `${baseFirebaseUrl}/${msgId}.json`;
-            if (token) updateUrl += `?auth=${token}`;
-
-            const firebaseResp = await fetch(updateUrl, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+            if (app === 'neighbourhood') {
+                await firestorePatch(`neighbourhood_posts/${msgId}`, {
                     translation: translatedText || null,
-                    reprocessedAt: { ".sv": "timestamp" }
-                })
-            });
-
-            if (!firebaseResp.ok) {
-                const errText = await firebaseResp.text();
-                throw new Error(`Firebase update failed (${firebaseResp.status}): ${errText}`);
+                    reprocessedAt: new Date()
+                }, token);
+            } else {
+                let updateUrl = `${baseFirebaseUrl}/${msgId}.json`;
+                if (token) updateUrl += `?auth=${token}`;
+                const firebaseResp = await fetch(updateUrl, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        translation: translatedText || null,
+                        reprocessedAt: { ".sv": "timestamp" }
+                    })
+                });
+                if (!firebaseResp.ok) {
+                    const errText = await firebaseResp.text();
+                    throw new Error(`Firebase update failed (${firebaseResp.status}): ${errText}`);
+                }
             }
 
             return new Response(JSON.stringify({
@@ -310,32 +374,44 @@ async function handleRequest(request) {
         // SKIP EMOJIS AND TRANSLATE
         let translatedText = await translateToAllLanguages(text);
 
-        const dbPayload = {
-            text: text,
-            timestamp: { ".sv": "timestamp" },
-            ...(translatedText && { translation: translatedText })
-        };
+        let docId;
+        if (app === 'neighbourhood') {
+            const dbPayload = {
+                text: text,
+                timestamp: new Date(),
+                uid: uid,
+                ...(translatedText && { translation: translatedText })
+            };
+            docId = await firestoreCreate('neighbourhood_posts', dbPayload, token);
+        } else {
+            const dbPayload = {
+                text: text,
+                timestamp: { ".sv": "timestamp" },
+                ...(translatedText && { translation: translatedText })
+            };
+            dbPayload.uid = uid;
 
-        dbPayload.uid = uid;
+            let postUrl = `${baseFirebaseUrl}.json`;
+            if (token) postUrl += `?auth=${token}`;
 
-        let postUrl = `${baseFirebaseUrl}.json`;
-        if (token) postUrl += `?auth=${token}`;
+            const firebaseResp = await fetch(postUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(dbPayload)
+            });
 
-        const firebaseResp = await fetch(postUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(dbPayload)
-        });
+            if (!firebaseResp.ok) {
+                const errText = await firebaseResp.text();
+                throw new Error(`Firebase write failed (${firebaseResp.status}): ${errText}`);
+            }
 
-        if (!firebaseResp.ok) {
-            const errText = await firebaseResp.text();
-            throw new Error(`Firebase write failed (${firebaseResp.status}): ${errText}`);
+            const firebaseData = await firebaseResp.json();
+            docId = firebaseData.name;
         }
 
-        const firebaseData = await firebaseResp.json();
         return new Response(JSON.stringify({
             success: true,
-            id: firebaseData.name,
+            id: docId,
             translation: translatedText
         }), { status: 200, headers });
 

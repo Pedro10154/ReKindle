@@ -7,7 +7,10 @@
         "deploy:beta": "npx wrangler pages deploy . --project-name=rekindle --branch=beta",
         "deploy:rules:firestore": "firebase deploy --only firestore:rules",
         "deploy:rules:rtdb": "firebase deploy --only database:rules",
-        "deploy:rules:storage": "firebase deploy --only storage"
+        "deploy:rules:storage": "firebase deploy --only storage",
+        "deploy:rules:social:firestore": "firebase deploy --config firebase-social.json --only firestore:rules --project rekindle-socials",
+        "deploy:rules:social:rtdb": "firebase deploy --config firebase-social.json --only database:rules --project rekindle-socials",
+        "deploy:rules:social": "npm run deploy:rules:social:firestore && npm run deploy:rules:social:rtdb"
     },
     "dependencies": {
         "@babel/core": "^7.23.0",

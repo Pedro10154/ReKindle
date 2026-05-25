@@ -186,124 +186,6 @@
             display: flex;
             flex-grow: 1;
             overflow: hidden;
-            --sidebar-width: 252px;
-            /* Default: 250px width + 2px border */
-        }
-
-        /* SIDEBAR */
-        #sidebar {
-            width: 250px;
-            border-right: 2px solid black;
-            display: flex;
-            flex-direction: column;
-            background: #fafafa;
-            flex-shrink: 0;
-        }
-
-        .sidebar-header {
-            padding: 10px;
-            border-bottom: 1px solid #ccc;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #eee;
-        }
-
-        #room-list {
-            flex-grow: 1;
-            overflow-y: auto;
-        }
-
-        .room-item {
-            padding: 10px 15px;
-            border-bottom: 1px solid #eee;
-            cursor: pointer;
-            display: flex;
-            flex-direction: row;
-            align-items: center;
-        }
-
-        .room-avatar {
-            width: 32px;
-            height: 32px;
-            border: 1px solid black;
-            background: white;
-            margin-right: 8px;
-            flex-shrink: 0;
-            image-rendering: pixelated;
-            image-rendering: -webkit-crisp-edges;
-            image-rendering: crisp-edges;
-        }
-
-        .room-content {
-            flex: 1;
-            min-width: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-        }
-
-        .room-item:hover {
-            background: #f0f0f0;
-        }
-
-        .room-item.active {
-            background: black;
-            color: white;
-            font-weight: bold;
-        }
-
-        .room-top {
-            display: flex;
-            justify-content: space-between;
-            width: 100%;
-            align-items: center;
-        }
-
-        .room-item.unread .room-top span {
-            font-weight: bold;
-        }
-
-        .room-time {
-            font-size: 0.75rem;
-            color: #666;
-            margin-top: 2px;
-            font-weight: normal;
-        }
-
-        .room-item.active .room-time {
-            color: #ccc;
-        }
-
-        .sidebar-separator {
-            height: 1px;
-            background: #eee;
-            margin: 5px 15px;
-            border-bottom: 1px solid #ccc;
-        }
-
-        /* DELETE BUTTON IN LIST */
-        .del-room-btn {
-            font-weight: bold;
-            color: #999;
-            padding: 5px 2px 5px 10px;
-            cursor: pointer;
-            font-family: sans-serif;
-            font-size: 1.2rem;
-            line-height: 0.8;
-            margin-left: auto;
-        }
-
-        .del-room-btn:hover {
-            color: black;
-        }
-
-        .room-item.active .del-room-btn {
-            color: #ccc;
-        }
-
-        .room-item.active .del-room-btn:hover {
-            color: white;
         }
 
         /* CHAT VIEW */
@@ -314,7 +196,6 @@
             background: white;
             position: relative;
             min-width: 0;
-            max-width: calc(100% - var(--sidebar-width));
         }
 
         /* ROOM HEADER */
@@ -328,17 +209,6 @@
             font-size: 0.9rem;
             flex-shrink: 0;
             position: relative;
-        }
-
-
-
-        #header-new-chat-btn {
-            position: absolute;
-            left: 10px;
-            display: none;
-            /* Default hidden, overrides sys-btn flex */
-            padding: 2px 8px;
-            /* Compact */
         }
 
         .current-room {
@@ -1114,20 +984,8 @@
 
         <div id="app-layout">
 
-            <div id="sidebar">
-                <div class="sidebar-header">
-                    <span style="font-weight:bold;" data-i18n="kindlechat.title">Chats</span>
-                    <button class="sys-btn" onclick="openCreateModal()">+</button>
-                </div>
-                <div id="room-list">
-                </div>
-            </div>
-
             <div id="chat-view">
                 <div class="room-header">
-                    <!-- NEW: Conditional New Chat Button -->
-                    <button id="header-new-chat-btn" class="sys-btn header-new-chat-btn"
-                        onclick="openCreateModal()">+</button>
                     <span class="current-room" id="room-title">All of KindleChat</span>
                 </div>
 
@@ -1196,37 +1054,6 @@
 
     <!-- SHARED MODAL OVERLAY -->
     <div id="modal-overlay">
-
-        <!-- SEND DM MODAL CONTENT -->
-        <div class="modal-box" id="create-modal-content">
-            <h3 data-i18n="kindlechat.modal.dm.title">Send Message</h3>
-            <div style="display: flex; align-items: stretch; width: 100%; margin: 10px 0; box-sizing: border-box">
-                <input type="text" id="dm-username" class="modal-input" placeholder="Username (e.g. bob)"
-                    data-i18n-placeholder="kindlechat.modal.dm.user"
-                    style="flex-grow: 1; margin: 0; width: auto; font-family: inherit; font-size: 1rem; box-sizing: border-box;">
-                <button
-                    onclick="document.getElementById('dm-username').value='ukiyo'; document.getElementById('dm-message').focus();"
-                    style="padding: 8px; background: white; border: 2px solid black; cursor: pointer; font-family: inherit; font-size: 1rem; font-weight: normal; color: black; box-sizing: border-box;; margin-left: 5px">Ukiyo</button>
-            </div>
-            <textarea id="dm-message" class="modal-input" placeholder="Message..."
-                data-i18n-placeholder="kindlechat.modal.dm.msg" style="height:60px; resize:none;"></textarea>
-            <div style="margin-top: 15px; display: flex; justify-content: center">
-                <button class="sys-btn" onclick="sendDirectMessage()" data-i18n="kindlechat.modal.dm.send">Send</button>
-                <button class="sys-btn" onclick="closeModal('modal-overlay')" data-i18n="common.cancel"
-                    style="margin-left: 10px">Cancel</button>
-            </div>
-        </div>
-
-        <!-- DELETE MODAL CONTENT -->
-        <div class="modal-box" id="delete-modal-content" style="display:none;">
-            <h3 data-i18n="kindlechat.modal.leave.title">Leave Chat?</h3>
-            <p style="margin: 15px 0;" data-i18n="kindlechat.modal.leave.text">Remove this chat from your list?</p>
-            <div style="margin-top: 15px; display: flex; justify-content: center">
-                <button class="sys-btn" onclick="confirmLeaveRoom()" data-i18n="kindlechat.modal.leave.yes">Yes</button>
-                <button class="sys-btn" onclick="closeModal('modal-overlay')" data-i18n="kindlechat.modal.leave.no"
-                    style="margin-left: 10px">No</button>
-            </div>
-        </div>
 
         <!-- GENERIC MESSAGE MODAL -->
         <div class="modal-box" id="generic-modal-content" style="display:none;">
@@ -1343,6 +1170,16 @@
             databaseURL: "https://rekindle-dd1fa-default-rtdb.firebaseio.com/"
         };
 
+        var socialConfig = {
+            apiKey: "AIzaSyBy_n32McwWZidFn28-1eHYBTYjvVDH_Wk",
+            authDomain: "rekindle-socials.firebaseapp.com",
+            projectId: "rekindle-socials",
+            storageBucket: "rekindle-socials.firebasestorage.app",
+            messagingSenderId: "1004814440293",
+            appId: "1:1004814440293:web:abc94996445575be9b338c",
+            databaseURL: "https://rekindle-socials-default-rtdb.firebaseio.com"
+        };
+
         // --- CONFIGURATION ---
         function showModal(msg, isConfirm, callback) {
             var overlay = document.getElementById('modal-overlay');
@@ -1350,8 +1187,6 @@
             var btnsEl = document.getElementById('modal-btns');
 
             // Show generic content, hide Others
-            document.getElementById('create-modal-content').style.display = 'none';
-            document.getElementById('delete-modal-content').style.display = 'none';
             document.getElementById('settings-modal-content').style.display = 'none';
             document.getElementById('rules-modal-content').style.display = 'none';
             document.getElementById('generic-modal-content').style.display = 'block';
@@ -1369,6 +1204,7 @@
         function hideModal() { document.getElementById('modal-overlay').style.display = 'none'; }
 
         firebase.initializeApp(firebaseConfig);
+        var socialApp = firebase.initializeApp(socialConfig, 'social');
         var db = firebase.firestore();
 
         // Configure for Safari/Mac compatibility (fixes CORS errors)
@@ -1385,7 +1221,10 @@
 
         var auth = firebase.auth();
         var rtdb = firebase.database();
-        var generalChatRef = rtdb.ref('kindlechat/messages');
+        var socialDb = socialApp.firestore();
+        var socialRtdb = socialApp.database();
+        var socialAuth = socialApp.auth();
+        var generalChatRef = socialRtdb.ref('kindlechat/messages');
         var generalListener = null;
 
         // --- STATE ---
@@ -1396,13 +1235,8 @@
         var TRANSLATION_WORKER_URL = "https://rekindle-translate.timjarnott.workers.dev";
         // Example: "https://rekindle-chat-worker.timothyarnott.workers.dev"
         var currentRoomId = 'general';
-        var currentDmPartnerName = '';
         var isPro = false; // Pro Status
-        var roomToDeleteId = null;
         var unsubscribeMsg = null;
-        var unsubscribeRooms = null;
-        var unsubscribeGeneral = null;
-        var oldestMsgDoc = null; // For pagination
         var oldestGeneralTimestamp = null; // For RTDB pagination
         var isLoadingMore = false; // For pagination
         var noMoreGeneralMessages = false; // True once we've reached the oldest message in RTDB
@@ -1414,76 +1248,13 @@
         // pagination, and live updates. Reset whenever the room changes.
         var renderedKindlechatIds = {};
         var generalDomMsgCount = 0;       // Counter replacing querySelectorAll('.msg') in kcAddedHandler
-        var dmInitialLoaded = false;      // Tracks whether first Firestore DM snapshot has rendered
-        var renderedDmIds = {};           // Tracks rendered DM message IDs (like renderedKindlechatIds)
         var kcDeleteHandler = null;       // child_removed handler ref (on generalListener query)
         var kcChangedHandler = null;      // limitToLast(child_changed) handler ref
         var kcAddedHandler = null;        // limitToLast(child_added) handler ref
         var rulesListenerRef = null;      // accepted_rules listener for cleanup
-        var userRooms = [];
-        var generalRoom = { id: 'general', name: window.t('kindlechat.room.general', 'All of KindleChat'), lastMessageAt: null };
-        var userRoomStates = {};
-        var roomStatesLoaded = false;
-
-        function loadRoomStates() {
-            if (!currentUser) return Promise.resolve();
-            return rtdb.ref('users_private/' + currentUser.uid + '/chat_states').once('value')
-                .then(function (snap) {
-                    userRoomStates = snap.val() || {};
-                    roomStatesLoaded = true;
-                    if (userRooms.length > 0) updateSidebar();
-                });
-        }
 
         function markAllAsRead() {
-            if (!currentUser) return;
-            var updates = {};
-            var hasUpdates = false;
-
-            // Check General Room
-            var generalMsgs = getCachedMessages('general');
-            if (generalRoom && generalRoom.lastMessageAt) {
-                var generalTs = generalRoom.lastMessageAt;
-                if (generalTs && generalTs.toMillis) generalTs = generalTs.toMillis();
-                else if (generalTs && generalTs.seconds) generalTs = generalTs.seconds * 1000;
-
-                var currentGeneralLastRead = (userRoomStates['general'] && typeof userRoomStates['general'].lastReadTime === 'number') ? userRoomStates['general'].lastReadTime : 0;
-
-                if (generalTs > currentGeneralLastRead) {
-                    if (!userRoomStates['general']) userRoomStates['general'] = {};
-                    userRoomStates['general'].lastReadTime = generalTs;
-                    updates['general/lastReadTime'] = generalTs;
-                    hasUpdates = true;
-                }
-            }
-
-            // Check DMs/Other Rooms
-            userRooms.forEach(function (r) {
-                var currentTs = r.lastMessageAt;
-                if (currentTs && currentTs.toMillis) currentTs = currentTs.toMillis();
-                else if (currentTs && currentTs.seconds) currentTs = currentTs.seconds * 1000;
-
-                var lastRead = 0;
-                if (userRoomStates[r.id] && userRoomStates[r.id].lastReadTime) {
-                    lastRead = userRoomStates[r.id].lastReadTime;
-                }
-
-                if (currentTs > lastRead) {
-                    if (!userRoomStates[r.id]) userRoomStates[r.id] = {};
-                    userRoomStates[r.id].lastReadTime = currentTs;
-                    updates[r.id + '/lastReadTime'] = currentTs;
-                    hasUpdates = true;
-                }
-            });
-
-            if (hasUpdates) {
-                rtdb.ref('users_private/' + currentUser.uid + '/chat_states').update(updates).then(function () {
-                    updateSidebar();
-                }).catch(function (error) {
-                    console.error("Error updating all chats read states:", error);
-                    updateSidebar(); // update local anyways
-                });
-            }
+            // No-op: only general chat remains, no sidebar/unread tracking needed.
         }
         // --- SETTINGS ---
         // Create a resolution function for language (mirrors i18n.js logic)
@@ -1557,7 +1328,7 @@
                     currentUser = user;
                     currentUsername = (user.email || user.uid).split('@')[0];
 
-                    // Check moderator status
+                    // Check moderator status (main project)
                     rtdb.ref('moderators/' + user.uid).once('value').then(function (modSnap) {
                         isCurrentUserMod = modSnap.val() === true;
                         if (isCurrentUserMod) {
@@ -1566,7 +1337,7 @@
                         }
                     });
 
-                    // Check Rules Acceptance
+                    // Check Rules Acceptance (main project)
                     if (rulesListenerRef) rulesListenerRef.off();
                     rulesListenerRef = rtdb.ref('users_private/' + user.uid + '/accepted_rules/kindlechat');
                     rulesListenerRef.on('value', function (snap) {
@@ -1583,90 +1354,30 @@
                     document.getElementById('active-input').style.display = 'flex';
                     document.getElementById('locked-input').style.display = 'none';
 
-                    // Run cleanup in background (non-blocking)
-                    cleanupEmptyChats();
+                    // Authenticate with social project before loading social data
+                    var getSocialToken = firebase.functions().httpsCallable('getSocialToken');
+                    getSocialToken({}).then(function (result) {
+                        return socialAuth.signInWithCustomToken(result.data.token);
+                    }).then(function () {
+                        // Username/avatar cache is populated lazily as messages render
+                        // via rekindleFetchUserCard (reads tiny /user_cards records).
 
-                    // Username/avatar cache is populated lazily as messages render
-                    // via rekindleFetchUserCard (reads tiny /user_cards records).
-
-                    // Wait for supporters to load BEFORE loading messages to avoid race condition on Pro styling
-                    fetchSupporters().then(function () {
-                        loadMessages();
-                    })['catch'](function (err) {
-                        console.warn("Continuing without supporters:", err);
-                        loadMessages();
-                    });
-
-                    loadRoomStates().then(function () {
-                        loadRooms();
-                    });
-
-                    // DEEP LINK: Open DM if requested
-                    var params = new URLSearchParams(window.location.search);
-                    var chatWithUid = params.get('chat_with_uid');
-                    var chatWithName = params.get('name') || params.get('chat_with');
-
-                    if (chatWithUid && chatWithUid !== currentUser.uid) {
-                        // OPTIMIZED: Try O(1) fetch with deterministic Room ID
-                        var uids = [currentUser.uid, chatWithUid].sort();
-                        var roomId = "dm_" + uids[0] + "_" + uids[1];
-
-                        db.collection('rooms').doc(roomId).get().then(function (doc) {
-                            if (doc.exists) {
-                                switchRoom(roomId, chatWithName || "Chat");
-                                window.history.replaceState({}, document.title, window.location.pathname);
-                            } else {
-                                // Fallback: Check if old-style DM exists by name
-                                handleLegacyDeepLink(chatWithName, chatWithUid);
-                            }
+                        // Wait for supporters to load BEFORE loading messages to avoid race condition on Pro styling
+                        fetchSupporters().then(function () {
+                            loadMessages();
                         })['catch'](function (err) {
-                            console.error("Error fetching room:", err);
-                            handleLegacyDeepLink(chatWithName, chatWithUid);
+                            console.warn("Continuing without supporters:", err);
+                            loadMessages();
                         });
-                    } else if (chatWithName && chatWithName !== currentUsername) {
-                        handleLegacyDeepLink(chatWithName, null);
-                    }
-
-                    function handleLegacyDeepLink(targetName, targetUid) {
-                        if (!targetName) return;
-                        db.collection('rooms')
-                            .where('participants', 'array-contains', currentUsername)
-                            .where('type', '==', 'dm')
-                            .get()
-                            .then(function (snapshot) {
-                                var foundRoomId = null;
-                                snapshot.forEach(function (doc) {
-                                    var data = doc.data();
-                                    if (data.participants.includes(targetName)) {
-                                        foundRoomId = doc.id;
-                                    }
-                                });
-
-                                if (foundRoomId) {
-                                    switchRoom(foundRoomId, targetName);
-                                } else if (targetUid) {
-                                    // NO existing room found: Create new DM with deterministic ID
-                                    var uids = [currentUser.uid, targetUid].sort();
-                                    var newRoomId = "dm_" + uids[0] + "_" + uids[1];
-                                    db.collection('rooms').doc(newRoomId).set({
-                                        type: 'dm',
-                                        participants: [currentUsername, targetName],
-                                        participantUids: [currentUser.uid, targetUid],
-                                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                                        lastMessageAt: firebase.firestore.FieldValue.serverTimestamp()
-                                    }).then(function () {
-                                        switchRoom(newRoomId, targetName);
-                                    });
-                                }
-                                window.history.replaceState({}, document.title, window.location.pathname);
-                            })['catch'](function (err) {
-                                console.error("Legacy deep link error:", err);
-                            });
-                    }
+                    }).catch(function (err) {
+                        console.error('Social auth failed:', err);
+                        showModal('Unable to connect to social backend. Please try again later.', false);
+                    });
                 } else {
                     currentUser = null;
                     document.getElementById('app-layout').style.display = 'none';
                     document.getElementById('guest-overlay').style.display = 'flex';
+                    if (socialAuth) socialAuth.signOut();
                     loadMessages();
                 }
             });
@@ -1732,8 +1443,6 @@
         // --- ASCII PICKER LOGIC ---
         function openSettingsModal() {
             var overlay = document.getElementById('modal-overlay');
-            document.getElementById('create-modal-content').style.display = 'none';
-            document.getElementById('delete-modal-content').style.display = 'none';
             document.getElementById('generic-modal-content').style.display = 'none';
             document.getElementById('rules-modal-content').style.display = 'none';
             document.getElementById('settings-modal-content').style.display = 'block';
@@ -1758,8 +1467,6 @@
             var acceptBtn = document.getElementById('btn-accept-rules');
             var closeBox = document.querySelector('#rules-modal-content .close-box');
 
-            document.getElementById('create-modal-content').style.display = 'none';
-            document.getElementById('delete-modal-content').style.display = 'none';
             document.getElementById('generic-modal-content').style.display = 'none';
             document.getElementById('settings-modal-content').style.display = 'none';
             document.getElementById('rules-modal-content').style.display = 'block';
@@ -1980,304 +1687,6 @@
 
         // --- ROOM LOGIC ---
 
-        function cleanupEmptyChats() {
-            if (!currentUsername) return;
-
-            // OPTIMIZATION: Only run cleanup once every 24 hours to save reads
-            var lastCleanup = localStorage.getItem('kindlechat_last_cleanup');
-            var now = Date.now();
-            if (lastCleanup && (now - parseInt(lastCleanup)) < 86400000) {
-                console.log("Chat: Cleanup skipped (Recently performed)");
-                return;
-            }
-
-            db.collection('rooms')
-                .where('participants', 'array-contains', currentUsername)
-                .limit(15)
-                .get()
-                .then(function (roomsQuery) {
-                    var cleanupPromises = [];
-                    roomsQuery.forEach(function (doc) {
-                        var roomData = doc.data();
-                        if (roomData.participants.indexOf('ukiyo') !== -1) return;
-
-                        var messagesRef = db.collection('rooms').doc(doc.id).collection('messages');
-                        var promise = messagesRef.limit(1).get().then(function (messageSnap) {
-                            if (messageSnap.empty) {
-                                return db.collection('rooms').doc(doc.id).update({
-                                    participants: firebase.firestore.FieldValue.arrayRemove(currentUsername)
-                                });
-                            }
-                        });
-                        cleanupPromises.push(promise);
-                    });
-                    return Promise.all(cleanupPromises);
-                })
-                .then(function () {
-                    localStorage.setItem('kindlechat_last_cleanup', now.toString());
-                    console.log("Chat: Cleanup completed for active rooms");
-                })
-            ['catch'](function (e) {
-                console.error("Error during empty chat cleanup:", e);
-            });
-        }
-
-        function updateSidebar() {
-            // Sort only user rooms by lastMessageAt descending
-            userRooms.sort(function (a, b) {
-                var timeA = getTimestampMillis(a.lastMessageAt);
-                var timeB = getTimestampMillis(b.lastMessageAt);
-                return timeB - timeA;
-            });
-            renderRoomList(generalRoom, userRooms);
-
-            // Sidebar visibility logic
-            var sidebar = document.getElementById('sidebar');
-            var headerBtn = document.getElementById('header-new-chat-btn');
-
-            // ALWAYS show sidebar if General exists so users can see activity/timestamps
-            if (generalRoom || userRooms.length > 0) {
-                sidebar.style.display = 'flex';
-                headerBtn.style.display = 'none';
-                document.getElementById('app-layout').style.setProperty('--sidebar-width', '252px');
-            } else {
-                sidebar.style.display = 'none';
-                headerBtn.style.display = 'block';
-                document.getElementById('app-layout').style.setProperty('--sidebar-width', '0px');
-            }
-        }
-
-        // --- ROOM CACHING (localStorage) ---
-        var ROOMS_CACHE_KEY = 'kindlechat_rooms_cache';
-
-        function getCachedRooms() {
-            try {
-                var cached = localStorage.getItem(ROOMS_CACHE_KEY);
-                if (cached) {
-                    var data = JSON.parse(cached);
-                    // Cache valid for 1 hour
-                    if (data.timestamp && (Date.now() - data.timestamp) < 3600000) {
-                        return data.rooms || [];
-                    }
-                }
-            } catch (e) { }
-            return [];
-        }
-
-        function cacheRooms(rooms) {
-            try {
-                localStorage.setItem(ROOMS_CACHE_KEY, JSON.stringify({
-                    timestamp: Date.now(),
-                    rooms: rooms.map(function (r) {
-                        // Store timestamp as millis for robust serialization
-                        var ts = r.lastMessageAt;
-                        var tsMillis = ts ? (ts.toMillis ? ts.toMillis() : ts) : null;
-
-                        // Also handle numeric timestamps from plain objects if previously cached
-                        if (typeof ts === 'object' && ts !== null && ts.seconds) {
-                            tsMillis = ts.seconds * 1000;
-                        }
-
-                        return {
-                            id: r.id,
-                            name: r.name,
-                            type: r.type,
-                            lastMessageAt: tsMillis
-                        };
-                    })
-                }));
-            } catch (e) { }
-        }
-
-        function loadRooms() {
-            if (unsubscribeRooms) unsubscribeRooms();
-            if (unsubscribeGeneral) unsubscribeGeneral();
-
-            var listEl = document.getElementById('room-list');
-
-            // Show cached rooms immediately for instant display
-            var cachedRooms = getCachedRooms();
-            if (cachedRooms.length > 0) {
-                userRooms = cachedRooms;
-                updateSidebar();
-            } else {
-                listEl.innerHTML = '<div style="padding:10px;">Loading...</div>';
-            }
-
-            // Listen to general room updates for timestamp
-            // Listen to general room updates for timestamp (RTDB)
-            var generalLastMsgRef = rtdb.ref('kindlechat/messages').orderByChild('timestamp').limitToLast(1);
-            var onGeneralTimestamp = function (snapshot) {
-                if (snapshot.exists()) {
-                    snapshot.forEach(function (child) {
-                        generalRoom.lastMessageAt = child.val().timestamp;
-                    });
-                }
-                updateSidebar();
-            };
-            generalLastMsgRef.on('value', onGeneralTimestamp, function (err) {
-                console.error("Chat: General RTDB snapshot error:", err);
-                updateSidebar();
-            });
-
-            unsubscribeGeneral = function () {
-                generalLastMsgRef.off('value', onGeneralTimestamp);
-            };
-
-            unsubscribeRooms = db.collection('rooms')
-                .where('participants', 'array-contains', currentUsername)
-                .onSnapshot(function (snap) {
-                    userRooms = [];
-                    snap.forEach(function (doc) {
-                        var data = doc.data();
-                        var r = {
-                            id: doc.id,
-                            type: data.type,
-                            lastMessageAt: data.lastMessageAt || data.createdAt // Fallback
-                        };
-
-                        if (data.type === 'dm') {
-                            var otherPerson = (data.participants || []).filter(function (p) { return p !== currentUsername; })[0];
-                            // Fall back to intendedParticipants for rooms where the recipient
-                            // hasn't been moved into the main participants array yet.
-                            if (!otherPerson && data.intendedParticipants) {
-                                otherPerson = data.intendedParticipants.filter(function (p) { return p !== currentUsername; })[0];
-                            }
-                            if (otherPerson === 'ukiyo') {
-                                r.name = "Ukiyo (Developer)";
-                            } else {
-                                r.name = otherPerson || "Me";
-                            }
-                        } else {
-                            r.name = data.name || "Untitled Group";
-                        }
-                        userRooms.push(r);
-                    });
-
-                    // Cache the fresh rooms
-                    cacheRooms(userRooms);
-                    updateSidebar();
-                }, function (err) {
-                    console.error("User rooms snapshot error:", err);
-                    updateSidebar(); // Proceed anyway
-                });
-        }
-
-        function renderRoomList(general, rooms) {
-            var listEl = document.getElementById('room-list');
-            listEl.innerHTML = '';
-
-            // 1. Render General Room
-            if (general) {
-                renderRoomItem(general, listEl);
-                // 2. Add Separator if there are other rooms
-                if (rooms.length > 0) {
-                    var sep = document.createElement('div');
-                    sep.className = 'sidebar-separator';
-                    listEl.appendChild(sep);
-                }
-            }
-
-            // 3. Render Other Rooms
-            for (var i = 0; i < rooms.length; i++) {
-                renderRoomItem(rooms[i], listEl);
-            }
-        }
-
-        function renderRoomItem(room, listEl) {
-            var roomMsgTime = room.lastMessageAt || 0;
-            if (roomMsgTime && roomMsgTime.toMillis) roomMsgTime = roomMsgTime.toMillis();
-            else if (roomMsgTime && roomMsgTime.seconds) roomMsgTime = roomMsgTime.seconds * 1000;
-
-            var showUnread = false;
-            var _lastRead = 0;
-            if (roomStatesLoaded) {
-                _lastRead = (userRoomStates[room.id] && typeof userRoomStates[room.id].lastReadTime === 'number') ? userRoomStates[room.id].lastReadTime : 0;
-                if (roomMsgTime > _lastRead && room.id !== currentRoomId) {
-                    showUnread = true;
-                }
-            }
-
-            // Auto-sync current room state
-            if (room.id === currentRoomId && roomStatesLoaded) {
-                if (!userRoomStates[room.id]) userRoomStates[room.id] = {};
-                var currentLastRead = userRoomStates[room.id].lastReadTime || 0;
-                if (currentLastRead < roomMsgTime) {
-                    userRoomStates[room.id].lastReadTime = roomMsgTime;
-                    if (currentUser) {
-                        rtdb.ref('users_private/' + currentUser.uid + '/chat_states/' + room.id + '/lastReadTime').set(roomMsgTime);
-                    }
-                }
-            }
-
-            var div = document.createElement('div');
-            div.className = 'room-item' + (room.id === currentRoomId ? ' active' : '') + (showUnread ? ' unread' : '');
-
-            var deleteHtml = '';
-            if (room.id !== 'general') {
-                deleteHtml = '<span class="del-room-btn" onclick="promptLeaveRoom(\'' + room.id + '\', event)">×</span>';
-            }
-
-            var unreadBadge = showUnread ? ' &bull; <b>New</b>' : '';
-            var timeStr = formatChatTime(roomMsgTime) + unreadBadge;
-
-            // Avatar for DM rooms
-            var avatarHtml = '';
-            var roomAvatarId = '';
-            if (room.id !== 'general') {
-                roomAvatarId = 'room-avatar-' + room.id.replace(/[^a-zA-Z0-9]/g, '_');
-                avatarHtml = '<canvas id="' + roomAvatarId + '" class="room-avatar" width="32" height="32"></canvas>';
-            }
-
-            div.innerHTML = avatarHtml +
-                '<div class="room-content">' +
-                '<div class="room-top"><span>' + room.name + '</span>' + deleteHtml + '</div>' +
-                '<div class="room-time">' + timeStr + '</div>' +
-                '</div>';
-            div.onclick = function () { switchRoom(room.id, room.name); };
-            listEl.appendChild(div);
-
-            // Draw avatar after DOM insertion. resolveAvatar is synchronous;
-            // calling directly avoids queueing one timer per sidebar item.
-            if (roomAvatarId && room.name) {
-                resolveAvatar(room.name, roomAvatarId);
-            }
-        }
-
-        function switchRoom(id, name) {
-            if (currentRoomId === id) return;
-
-            currentRoomId = id;
-            currentDmPartnerName = (id !== 'general') ? name : '';
-            document.getElementById('room-title').innerText = name;
-
-            if (currentUser && roomStatesLoaded) {
-                var now = Date.now();
-                if (!userRoomStates[id]) userRoomStates[id] = {};
-                userRoomStates[id].lastReadTime = now;
-                rtdb.ref('users_private/' + currentUser.uid + '/chat_states/' + id).update({
-                    lastReadTime: firebase.database.ServerValue.TIMESTAMP
-                });
-            }
-
-            // Clear previous messages to prevent ghosting
-            document.getElementById('chat-history').innerHTML = '';
-
-            // Update Pixel Button Visibility (Only show in 'general')
-            var pixelBtn = document.getElementById('pixel-btn');
-            if (pixelBtn) {
-                pixelBtn.style.display = (id === 'general') ? 'flex' : 'none';
-            }
-            // Update Flipbook Button Visibility (Only show in 'general')
-            var flipbookBtn = document.getElementById('flipbook-btn');
-            if (flipbookBtn) {
-                flipbookBtn.style.display = (id === 'general') ? 'flex' : 'none';
-            }
-
-            loadMessages();
-            updateSidebar(); // Refresh highlighting and clear unread statuses
-        }
-
         // --- MESSAGE LOGIC (with pagination) ---
 
         function showLoadingIndicator() {
@@ -2302,44 +1711,8 @@
             var st = historyEl.scrollTop;
 
             if (st <= 200 && !isLoadingMore) {
-                // BRANCH: General Chat (RTDB)
-                if (currentRoomId === 'general') {
-                    if (oldestGeneralTimestamp && !noMoreGeneralMessages) {
-                        loadMoreGeneralFromRTDB(historyEl);
-                    }
-                    return;
-                }
-
-                // BRANCH: Firestore DMs
-                if (oldestMsgDoc) {
-                    isLoadingMore = true;
-                    showLoadingIndicator();
-                    var oldScrollHeight = historyEl.scrollHeight;
-
-                    db.collection('rooms').doc(currentRoomId).collection('messages')
-                        .orderBy('timestamp', 'desc')
-                        .startAfter(oldestMsgDoc)
-                        .limit(25)
-                        .get()
-                        .then(function (querySnapshot) {
-                            if (!querySnapshot.empty) {
-                                oldestMsgDoc = querySnapshot.docs[querySnapshot.docs.length - 1]; // New oldest message
-
-                                querySnapshot.docs.forEach(function (doc) {
-                                    renderMessage(doc.data(), doc.id, true); // Prepend messages
-                                });
-
-                                // Restore scroll position
-                                historyEl.scrollTop = historyEl.scrollHeight - oldScrollHeight;
-                            }
-                        })
-                    ['catch'](function (e) {
-                        console.error("Error loading more messages:", e);
-                    })
-                        .then(function () {
-                            isLoadingMore = false;
-                            hideLoadingIndicator();
-                        });
+                if (oldestGeneralTimestamp && !noMoreGeneralMessages) {
+                    loadMoreGeneralFromRTDB(historyEl);
                 }
             }
         }
@@ -2514,12 +1887,9 @@
             kcDeleteHandler = null;
             renderedKindlechatIds = {};
             generalDomMsgCount = 0;
-            dmInitialLoaded = false;
-            renderedDmIds = {};
             // Reset Pixel Cache on reload
             window.pixelGridCache = {};
 
-            oldestMsgDoc = null;
             oldestGeneralTimestamp = null;
             isLoadingMore = false;
             noMoreGeneralMessages = false;
@@ -2528,167 +1898,7 @@
             setChatInputEnabled(false);
 
             var history = document.getElementById('chat-history');
-            var roomId = currentRoomId;
-
-            // BRANCH: Use Realtime Database for general channel
-            if (roomId === 'general') {
-                loadGeneralFromRTDB(history);
-                return;
-            }
-
-            // --- DMs: Continue with Firestore ---
-            // Show cached messages immediately
-            var cachedMsgs = getCachedMessages(roomId);
-            if (cachedMsgs.length > 0) {
-                history.innerHTML = '';
-                cachedMsgs.forEach(function (m) {
-                    renderMessage(m.data, m.id);
-                });
-                history.scrollTop = history.scrollHeight;
-            } else if (history.children.length === 0) {
-                history.innerHTML = '<div style="text-align:center; padding:20px">Connecting...</div>';
-            }
-
-            var query = db.collection('rooms').doc(roomId).collection('messages').orderBy('timestamp', 'asc').limitToLast(50);
-
-            unsubscribeMsg = query.onSnapshot(function (snapshot) {
-                // Restore Title
-                var titleEl = document.querySelector('.title-text');
-                if (titleEl) titleEl.innerText = 'KindleChat';
-
-                // Connection successful - enable input
-                setChatInputEnabled(true);
-
-                // Remove loading indicator if present
-                if (history.innerHTML.indexOf('Connecting...') !== -1) {
-                    history.innerHTML = '';
-                }
-
-                if (snapshot.empty && history.innerHTML === '') {
-                    history.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">No messages yet.</div>';
-                }
-
-                var isScrolledToBottom = history.scrollHeight - history.clientHeight <= history.scrollTop + 100;
-
-                if (!dmInitialLoaded) {
-                    // First snapshot: rebuild DOM in guaranteed query order
-                    if (snapshot.docs.length > 0) {
-                        history.innerHTML = '';
-                        renderedDmIds = {};
-                        snapshot.docs.forEach(function (doc) {
-                            renderMessage(doc.data(), doc.id);
-                            renderedDmIds[doc.id] = true;
-                        });
-                    }
-                    dmInitialLoaded = true;
-                } else {
-                    // Incremental updates: handle added/modified/removed correctly
-                    var addedIds = {};
-                    var modifiedIds = {};
-
-                    snapshot.docChanges().forEach(function (change) {
-                        if (change.type === 'added') {
-                            addedIds[change.doc.id] = true;
-                        } else if (change.type === 'modified') {
-                            modifiedIds[change.doc.id] = true;
-                        } else if (change.type === 'removed') {
-                            delete renderedDmIds[change.doc.id];
-                            var el = history.querySelector('.msg[data-msg-id="' + change.doc.id + '"]');
-                            if (el && el.parentNode) {
-                                el.parentNode.removeChild(el);
-                            }
-                        }
-                    });
-
-                    // Clear placeholder if we're adding the first real message
-                    if (Object.keys(addedIds).length > 0 &&
-                        history.children.length === 1 &&
-                        history.firstChild &&
-                        history.firstChild.textContent &&
-                        history.firstChild.textContent.indexOf('No messages yet') !== -1) {
-                        history.innerHTML = '';
-                    }
-
-                    // Insert added messages in snapshot.docs order to prevent scrambling
-                    snapshot.docs.forEach(function (doc) {
-                        if (!addedIds[doc.id]) return;
-                        if (renderedDmIds[doc.id]) return; // dedupe
-                        renderedDmIds[doc.id] = true;
-
-                        // Find the next already-rendered message in query order to insert before
-                        var beforeNode = null;
-                        var found = false;
-                        for (var i = 0; i < snapshot.docs.length; i++) {
-                            if (snapshot.docs[i].id === doc.id) {
-                                found = true;
-                                continue;
-                            }
-                            if (!found) continue;
-                            var nextEl = history.querySelector('.msg[data-msg-id="' + snapshot.docs[i].id + '"]');
-                            if (nextEl) {
-                                beforeNode = nextEl;
-                                break;
-                            }
-                        }
-
-                        renderMessage(doc.data(), doc.id, false, beforeNode);
-                    });
-
-                    // Update modified messages in place
-                    snapshot.docChanges().forEach(function (change) {
-                        if (change.type === 'modified' && renderedDmIds[change.doc.id]) {
-                            renderMessage(change.doc.data(), change.doc.id);
-                        }
-                    });
-                }
-
-                // Cache messages for next load
-                if (snapshot.docs.length > 0) {
-                    var lastDoc = snapshot.docs[snapshot.docs.length - 1];
-                    var lastTsData = lastDoc.data().timestamp;
-                    var newLastTs = lastTsData ? (lastTsData.toMillis ? lastTsData.toMillis() : lastTsData) : Date.now();
-
-                    var newMsgs = snapshot.docs.map(function (doc) {
-                        return { id: doc.id, data: doc.data() };
-                    });
-
-                    // Merge new messages with existing cache
-                    var currentCache = getCachedMessages(roomId);
-                    var merged = currentCache;
-
-                    newMsgs.forEach(function (nm) {
-                        var idx = merged.findIndex(function (cm) { return cm.id === nm.id; });
-                        if (idx !== -1) {
-                            merged[idx] = nm;
-                        } else {
-                            merged.push(nm);
-                        }
-                    });
-
-                    // Sort cache by timestamp so offline reload doesn't scramble order
-                    merged.sort(function (a, b) {
-                        var ta = a.data.timestamp ? (a.data.timestamp.toMillis ? a.data.timestamp.toMillis() : a.data.timestamp) : 0;
-                        var tb = b.data.timestamp ? (b.data.timestamp.toMillis ? b.data.timestamp.toMillis() : b.data.timestamp) : 0;
-                        return ta - tb;
-                    });
-
-                    cacheMessages(roomId, merged, newLastTs);
-                }
-
-                if (isScrolledToBottom) {
-                    history.scrollTop = history.scrollHeight;
-                }
-
-                if (snapshot.docs.length > 0) {
-                    oldestMsgDoc = snapshot.docs[0];
-                }
-
-            }, function (error) {
-                var titleEl = document.querySelector('.title-text');
-                if (titleEl) titleEl.innerText = 'KindleChat';
-                console.error("Error loading messages:", error);
-                history.innerHTML = '<div style="text-align:center; padding:20px;">Error connecting.</div>';
-            });
+            loadGeneralFromRTDB(history);
         }
 
         // --- GENERAL CHANNEL: Realtime Database ---
@@ -2976,7 +2186,6 @@
                         bubble.classList.remove('developer');
                     }
                 }
-                }
 
                 // Update game link starter name (if present)
                 var gameStarterEl = msgEl.querySelector('.game-starter-name');
@@ -3073,19 +2282,10 @@
 
             var safeUid = escapeHtml(msg.uid || '');
             var avatarId = 'avatar-' + (msgId || Math.random().toString(36).substr(2, 9));
-            var nameHtml;
-            if (currentRoomId !== 'general') {
-                var dmSenderName = isSelf ? currentUsername : (currentDmPartnerName || msg.user || '');
-                var safeDmSender = escapeHtml(dmSenderName);
-                nameHtml = isSelf
-                    ? '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'' + safeDmSender + '\')">' + window.t('kindlechat.msg.you', 'You') + '</span>'
-                    : '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'' + safeDmSender + '\')" style="font-weight:bold;">' + safeDmSender + '</span>';
-            } else {
-                var safeUser = escapeHtml(msg.uid ? msg.uid.substring(0, 8) : '');
-                nameHtml = isSelf
-                    ? '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'\')">' + window.t('kindlechat.msg.you', 'You') + '</span>'
-                    : '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'\')" style="font-weight:bold;">' + safeUser + '</span>';
-            }
+            var safeUser = escapeHtml(msg.uid ? msg.uid.substring(0, 8) : '');
+            var nameHtml = isSelf
+                ? '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'\')">' + window.t('kindlechat.msg.you', 'You') + '</span>'
+                : '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'\')" style="font-weight:bold;">' + safeUser + '</span>';
 
 
             var timeStr = msg.timestamp ? formatChatTime(msg.timestamp) : "";
@@ -3319,14 +2519,7 @@
             }
 
             // Resolve avatar after DOM insertion.
-            // DMs: both users share one avatar each — resolve by username (same as sidebar).
-            // General: per-message uid lookup via resolveMessageAuthor.
-            if (currentRoomId !== 'general') {
-                var dmSender = isSelf ? currentUsername : (currentDmPartnerName || msg.user || '');
-                if (dmSender) resolveAvatar(dmSender, avatarId);
-            } else {
-                resolveMessageAuthor(msg.uid, div, avatarId);
-            }
+            resolveMessageAuthor(msg.uid, div, avatarId);
 
             if (msg.is_flipnote && msg.flipnote_data) {
                 setTimeout(function () { playFlipnote(msgId); }, 200);
@@ -3374,36 +2567,31 @@
                 setTimeout(function () { isSendingMessage = false; }, 3000); // failsafe unlock
 
                 // SPAM PROTECTION: Enforced server-side so it cannot be bypassed client-side
-                if (currentRoomId === 'general') {
-                    var postGeneralChatMessage = firebase.functions().httpsCallable('postGeneralChatMessage');
-                    postGeneralChatMessage({ text: text })
-                        .then(function (result) {
-                            if (!result.data.allowed) {
-                                var waitSec = Math.ceil((result.data.retryAfter || 20000) / 1000);
-                                showModal('Please wait ' + waitSec + ' seconds before posting again.', false);
-                                resetSendState();
-                                return;
-                            }
-                            inputEl.value = '';
+                var postGeneralChatMessage = firebase.functions().httpsCallable('postGeneralChatMessage');
+                postGeneralChatMessage({ text: text })
+                    .then(function (result) {
+                        if (!result.data.allowed) {
+                            var waitSec = Math.ceil((result.data.retryAfter || 20000) / 1000);
+                            showModal('Please wait ' + waitSec + ' seconds before posting again.', false);
                             resetSendState();
-                            if (TRANSLATION_WORKER_URL) {
-                                fireTranslationRequest(currentUser.uid, text, result.data.key, 1);
-                            }
-                        })
-                        .catch(function (e) {
-                            resetSendState();
-                            console.error('Error posting message:', e);
-                            var msg = e.message || 'Error sending message. Please try again.';
-                            if (msg.includes('PERMISSION_DENIED') || msg.includes('restricted')) {
-                                showModal('You are temporarily restricted from posting.', false);
-                            } else {
-                                showModal(msg, false);
-                            }
-                        });
-                } else {
-                    inputEl.value = '';
-                    sendDMToFirestore(text);
-                }
+                            return;
+                        }
+                        inputEl.value = '';
+                        resetSendState();
+                        if (TRANSLATION_WORKER_URL) {
+                            fireTranslationRequest(currentUser.uid, text, result.data.key, 1);
+                        }
+                    })
+                    .catch(function (e) {
+                        resetSendState();
+                        console.error('Error posting message:', e);
+                        var msg = e.message || 'Error sending message. Please try again.';
+                        if (msg.includes('PERMISSION_DENIED') || msg.includes('restricted')) {
+                            showModal('You are temporarily restricted from posting.', false);
+                        } else {
+                            showModal(msg, false);
+                        }
+                    });
             });
         }
 
@@ -3460,7 +2648,8 @@
             // Visual feedback?
             console.log("Reprocessing message:", msgId);
 
-            currentUser.getIdToken().then(function (token) {
+            var tokenSource = socialAuth.currentUser || currentUser;
+            tokenSource.getIdToken(true).then(function (token) {
                 fetch(TRANSLATION_WORKER_URL, {
                     method: 'POST',
                     headers: {
@@ -3579,7 +2768,7 @@
             var isMod = isCurrentUserMod && isModeratorMode && currentUsername !== 'ukiyo';
             if (isMod) {
                 showModDeleteModal("Permanently delete this message?", function (reason) {
-                    rtdb.ref('kindlechat/messages/' + msgId).once('value').then(function (snap) {
+                    socialRtdb.ref('kindlechat/messages/' + msgId).once('value').then(function (snap) {
                         var msgData = snap.val();
                         if (!msgData) return;
                         var logKey = rtdb.ref('mod_actions').push().key;
@@ -3604,7 +2793,7 @@
                 });
             } else {
                 showConfirmModal("Permanently delete this message?", function () {
-                    rtdb.ref('kindlechat/messages/' + msgId).remove()['catch'](function (e) {
+                    socialRtdb.ref('kindlechat/messages/' + msgId).remove()['catch'](function (e) {
                         showModal("Delete failed: " + e.message);
                     });
                 });
@@ -3618,7 +2807,8 @@
             if (!currentUser) return;
             attempt = attempt || 1;
 
-            currentUser.getIdToken(true).then(function (token) {
+            var tokenSource = socialAuth.currentUser || currentUser;
+            tokenSource.getIdToken(true).then(function (token) {
                 fetch(TRANSLATION_WORKER_URL, {
                     method: 'POST',
                     headers: {
@@ -3711,46 +2901,6 @@
         }
 
         // --- DMs: Send to Firestore ---
-        function sendDMToFirestore(text) {
-            var messageData = {
-                uid: currentUser.uid,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                text: text
-            };
-
-            var roomRef = db.collection('rooms').doc(currentRoomId);
-
-            // Add the message first
-            roomRef.collection('messages').add(messageData)
-                .then(function () {
-                    resetSendState();
-                    // Update room activity
-                    return roomRef.set({
-                        lastMessageAt: firebase.firestore.FieldValue.serverTimestamp()
-                    }, { merge: true });
-                })
-                .then(function () {
-                    // Then, check if we need to "activate" the room for other users
-                    return roomRef.get();
-                })
-                .then(function (roomDoc) {
-                    if (roomDoc.exists) {
-                        var roomData = roomDoc.data();
-                        // If it's a DM that hasn't been activated yet
-                        if (roomData.type === 'dm' && roomData.intendedParticipants && roomData.participants.length < roomData.intendedParticipants.length) {
-                            // Add all intended participants to the main participants list
-                            return roomRef.update({
-                                participants: roomData.intendedParticipants
-                            });
-                        }
-                    }
-                })
-            ['catch'](function (e) {
-                resetSendState();
-                console.error("Error sending message:", e);
-            });
-        }
-
         // --- PIXEL ART SAVING ---
         function savePixelArt(msgId, authorUid, btnElement) {
             // Get the image URL from the sibling msg-bubble element
@@ -3894,17 +3044,12 @@
             if (!currentUser) return;
 
             // ADMIN: Shift+Click to delete All Reactions of this type
-            if (event && event.shiftKey && currentUsername === 'ukiyo' && currentRoomId === 'general') {
+            if (event && event.shiftKey && currentUsername === 'ukiyo') {
                 deleteGeneralReactionType(msgId, reaction);
                 return;
             }
 
-            // BRANCH: Use RTDB for general, Firestore for DMs
-            if (currentRoomId === 'general') {
-                toggleGeneralReactionRTDB(msgId, reaction);
-            } else {
-                toggleDMReactionFirestore(msgId, reaction);
-            }
+            toggleGeneralReactionRTDB(msgId, reaction);
         }
 
         // --- ADMIN FUNCTIONS ---
@@ -3912,7 +3057,7 @@
 
         function deleteGeneralReactionType(msgId, reactionType) {
             showConfirmModal("Delete ALL '" + reactionType + "' reactions?", function () {
-                var reactionsRef = rtdb.ref('kindlechat/messages/' + msgId + '/reactions');
+                var reactionsRef = socialRtdb.ref('kindlechat/messages/' + msgId + '/reactions');
                 reactionsRef.once('value').then(function (snapshot) {
                     if (!snapshot.exists()) return;
 
@@ -4019,7 +3164,7 @@
         function toggleGeneralReactionRTDB(msgId, reaction) {
             var userUID = currentUser.uid;
             var reactionRef = rtdb.ref('kindlechat/messages/' + msgId + '/reactions/' + userUID);
-            var msgRef = rtdb.ref('kindlechat/messages/' + msgId);
+            var msgRef = socialRtdb.ref('kindlechat/messages/' + msgId);
 
             // Get current reaction first
             reactionRef.once('value').then(function (snapshot) {
@@ -4046,136 +3191,10 @@
         }
 
         // --- DMs: Toggle reaction in Firestore ---
-        function toggleDMReactionFirestore(msgId, reaction) {
-            var messageRef = db.collection('rooms').doc(currentRoomId).collection('messages').doc(msgId);
-            var userUID = currentUser.uid;
-
-            messageRef.get().then(function (doc) {
-                if (!doc.exists) return;
-
-                var msgData = doc.data();
-                var reactions = msgData.reactions || {};
-                var val = reactions[userUID];
-                var userReaction = (typeof val === 'object' && val !== null) ? val.reaction : val;
-
-                if (userReaction === reaction) {
-                    // REMOVE: User clicks the reaction they already left
-                    delete reactions[userUID];
-                    var updates = {};
-                    updates["reactions." + userUID] = firebase.firestore.FieldValue.delete();
-                    messageRef.update(updates);
-                } else {
-                    // ADD/CHANGE
-                    reactions[userUID] = { reaction: reaction, username: currentUsername };
-                    messageRef.update({ reactions: reactions });
-                }
-
-                // UPDATE LOCAL CACHE with new reactions
-                updateCachedMessageReactions(currentRoomId, msgId, reactions);
-
-                // Re-render the message immediately with updated reactions
-                msgData.reactions = reactions;
-                renderMessage(msgData, msgId);
-
-            })['catch'](function (e) {
-                console.error("Error toggling reaction:", e);
-            });
-        }
-
-        // Helper function to update reactions in cache (for DMs only)
-        function updateCachedMessageReactions(roomId, msgId, newReactions) {
-            try {
-                var cached = getCachedMessages(roomId);
-                for (var i = 0; i < cached.length; i++) {
-                    if (cached[i].id === msgId) {
-                        cached[i].data.reactions = newReactions;
-                        break;
-                    }
-                }
-                var lastTs = getLastCachedTimestamp(roomId) || Date.now();
-                cacheMessages(roomId, cached, lastTs);
-            } catch (e) {
-                console.error("Error updating cache:", e);
-            }
-        }
-
         // --- MODAL LOGIC ---
-        function openCreateModal() {
-            if (!currentUser) return showModal("Please log in first.");
-            document.getElementById('generic-modal-content').style.display = 'none';
-            document.getElementById('delete-modal-content').style.display = 'none';
-            document.getElementById('create-modal-content').style.display = 'block';
-            document.getElementById('modal-overlay').style.display = 'flex';
-        }
-
         function closeModal(id) {
             if (!id) id = 'modal-overlay';
             document.getElementById(id).style.display = 'none';
-        }
-
-        // --- NEW: SEND DIRECT MESSAGE LOGIC ---
-        function sendDirectMessage() {
-            var usernameInput = document.getElementById('dm-username').value.trim();
-            var messageInput = document.getElementById('dm-message').value.trim();
-
-            if (!usernameInput) return showModal("Please enter a username.");
-            if (!messageInput) return showModal("Please enter a message.");
-
-            closeModal(); // Close modal immediately
-
-            var otherUser = usernameInput;
-            var participants = [currentUsername, otherUser].sort();
-
-            // Check if DM exists
-            db.collection('rooms')
-                .where('participants', 'array-contains', currentUsername)
-                .where('type', '==', 'dm')
-                .get()
-                .then(function (roomsSnap) {
-                    var existingRoomId = null;
-                    roomsSnap.forEach(function (doc) {
-                        var data = doc.data();
-                        if (data.participants.length === 2 && data.participants.indexOf(otherUser) !== -1) {
-                            existingRoomId = doc.id;
-                        }
-                    });
-
-                    if (existingRoomId) {
-                        switchRoom(existingRoomId, otherUser);
-                    } else {
-                        // Create new DM
-                        var newRoomRef;
-                        db.collection('rooms').add({
-                            type: 'dm',
-                            participants: [currentUsername],
-                            intendedParticipants: participants,
-                            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                            lastMessageAt: firebase.firestore.FieldValue.serverTimestamp()
-                        })
-                            .then(function (ref) {
-                                newRoomRef = ref;
-                                return newRoomRef.collection('messages').add({
-                                    uid: currentUser.uid,
-                                    text: messageInput,
-                                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                                });
-                            })
-                            .then(function () {
-                                return newRoomRef.update({ participants: participants });
-                            })
-                            .then(function () {
-                                switchRoom(newRoomRef.id, otherUser);
-                            })
-                        ['catch'](function (e) {
-                            console.error("Error creating DM:", e);
-                            showModal("Error creating DM.");
-                        });
-                    }
-                })
-            ['catch'](function (e) {
-                console.error("Error sending DM:", e);
-                showModal("Error starting chat.");
-            });
         }
 
         // --- FLIPNOTE PLAYER ---
@@ -4305,33 +3324,7 @@
         }
 
 
-        // --- LEAVE ROOM ---
-        function promptLeaveRoom(roomId, event) {
-            event.stopPropagation();
-            roomToDeleteId = roomId;
-            document.getElementById('generic-modal-content').style.display = 'none';
-            document.getElementById('create-modal-content').style.display = 'none';
-            document.getElementById('delete-modal-content').style.display = 'block';
-            document.getElementById('modal-overlay').style.display = 'flex';
-        }
 
-        function confirmLeaveRoom() {
-            if (!roomToDeleteId) return;
-
-            db.collection('rooms').doc(roomToDeleteId).update({
-                participants: firebase.firestore.FieldValue.arrayRemove(currentUsername)
-            })
-                .then(function () {
-                    if (currentRoomId === roomToDeleteId) {
-                        switchRoom('general', 'All of KindleChat');
-                    }
-                    closeModal();
-                })
-            ['catch'](function (e) {
-                console.error("Error leaving chat:", e);
-                closeModal();
-            });
-        }
 
         // Helper to handle escaping for text display within message bubbles
         function escapeHtml(text) {
@@ -4442,8 +3435,6 @@
         function kcDetachAllListeners() {
             try {
                 if (unsubscribeMsg) { unsubscribeMsg(); unsubscribeMsg = null; }
-                if (unsubscribeRooms) { unsubscribeRooms(); unsubscribeRooms = null; }
-                if (unsubscribeGeneral) { unsubscribeGeneral(); unsubscribeGeneral = null; }
                 if (generalListener) { generalListener.off(); generalListener = null; }
                 if (rulesListenerRef) { rulesListenerRef.off(); rulesListenerRef = null; }
                 kcAddedHandler = null;

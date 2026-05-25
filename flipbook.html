@@ -580,12 +580,7 @@
             <div id="editor-back-btn" class="close-box" style="left:38px; width:auto; padding:0 5px; display:none;"
                 onclick="showGallery()" data-i18n="rss.btn.back">Back</div>
             <span class="title-text" data-i18n="flipbook.title">Flipbook</span>
-            <!-- Contextual Back Button -->
-            <div id="back-to-chat-btn" class="close-box"
-                style="left:auto; right:10px; width:auto; padding:0 8px; font-weight:normal; display:none;"
-                onclick="window.location.href='kindlechat'" data-i18n="kindlechat.btn.back">
-                Back to Chat
-            </div>
+
         </div>
 
         <!-- GALLERY SCREEN -->
@@ -778,15 +773,6 @@
 
             // Prevent context menu
             canvas.oncontextmenu = (e) => e.preventDefault();
-
-            // Check for source param
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('source') === 'kindlechat') {
-                const backBtn = document.getElementById('back-to-chat-btn');
-                if (backBtn) backBtn.style.display = 'flex';
-                // Trigger auto-new
-                if (typeof createNew === 'function') createNew();
-            }
 
             window.addEventListener('resize', () => {
                 if (document.getElementById('screen-editor').classList.contains('active')) setupCanvas();

@@ -17,6 +17,23 @@ const nodemailer = require("nodemailer");
 
 admin.initializeApp();
 
+// Initialize secondary admin app for social project (rekindle-socials)
+let socialAdminApp = null;
+try {
+    const socialServiceAccount = JSON.parse(process.env.SOCIAL_SERVICE_ACCOUNT_JSON || '{}');
+    if (socialServiceAccount.project_id) {
+        socialAdminApp = admin.initializeApp({
+            credential: admin.credential.cert(socialServiceAccount),
+            databaseURL: 'https://rekindle-socials-default-rtdb.firebaseio.com'
+        }, 'social');
+        logger.info('Social admin app initialized for project:', socialServiceAccount.project_id);
+    } else {
+        logger.warn('SOCIAL_SERVICE_ACCOUNT_JSON not set — social features will be unavailable.');
+    }
+} catch (e) {
+    logger.error('Failed to initialize social admin app:', e);
+}
+
 // Allowed origins (same as Cloudflare workers)
 const allowedOrigins = [
     "https://beta.rekindle.pages.dev",
@@ -614,9 +631,45 @@ exports.checkIPOnLogin = onCall(callOptions, async (request) => {
  * Expects: { text?: string, ...optionalFields }
  * Returns: { allowed: boolean, key?: string, retryAfter?: number }
  */
+exports.getSocialToken = onCall(callOptions, async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Must be signed in.');
+    }
+    if (!socialAdminApp) {
+        throw new HttpsError('failed-precondition', 'Social project not configured on server.');
+    }
+
+    const uid = request.auth.uid;
+
+    // Fetch moderator status from main project RTDB
+    const modSnap = await admin.database().ref('moderators/' + uid).once('value');
+    const isModerator = modSnap.val() === true;
+
+    // Pro status from auth token claims or admin email
+    const isPro = request.auth.token.pro === true || request.auth.token.email === 'ukiyo@rekindle.ink';
+
+    // Generate custom token signed by the social project's service account
+    const token = await socialAdminApp.auth().createCustomToken(uid, {
+        moderator: isModerator,
+        pro: isPro
+    });
+
+    return { token };
+});
+
+/**
+ * Server-side posting to general chat with rate-limit enforcement.
+ * Writes to the social project's RTDB (rekindle-socials).
+ *
+ * Expects: { text?: string, ...optionalFields }
+ * Returns: { allowed: boolean, key?: string, retryAfter?: number }
+ */
 exports.postGeneralChatMessage = onCall(callOptions, async (request) => {
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'Must be signed in.');
+    }
+    if (!socialAdminApp) {
+        throw new HttpsError('failed-precondition', 'Social project not configured on server.');
     }
 
     const uid = request.auth.uid;
@@ -635,11 +688,14 @@ exports.postGeneralChatMessage = onCall(callOptions, async (request) => {
         throw new HttpsError('invalid-argument', 'Unable to determine username.');
     }
 
+    // Use social project's RTDB
+    const socialDb = socialAdminApp.database();
+
     // Token-bucket rate limit: generous burst, short per-post cooldown
     const MAX_TOKENS = 15;
     const REFILL_MS = 20000; // 1 token every 20 seconds
 
-    const limitRef = admin.database().ref(`kindlechat/user_limits/${username}`);
+    const limitRef = socialDb.ref(`kindlechat/user_limits/${username}`);
     const snap = await limitRef.once('value');
     const data = snap.val();
     const now = Date.now();
@@ -675,16 +731,16 @@ exports.postGeneralChatMessage = onCall(callOptions, async (request) => {
         }
     }
 
-    // Post to RTDB
+    // Post to social project's RTDB
     let msgRef;
     try {
-        msgRef = await admin.database().ref('kindlechat/messages').push(messageData);
+        msgRef = await socialDb.ref('kindlechat/messages').push(messageData);
     } catch (e) {
         logger.error('RTDB push error:', e);
         throw new HttpsError('internal', 'Failed to post message.');
     }
 
-    // Update rate-limit counter
+    // Update rate-limit counter on social project
     try {
         tokens -= 1;
         await limitRef.set({ tokens, lastRefill });

@@ -706,6 +706,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-functions-compat.js"></script>
     <script src="time.js"></script>
     <script src="theme.js?v=17"></script>
     <script src="bad_words.js?v=4"></script>
@@ -919,20 +920,36 @@
             databaseURL: "https://rekindle-dd1fa-default-rtdb.firebaseio.com"
         };
 
+        var socialConfig = {
+            apiKey: "AIzaSyBy_n32McwWZidFn28-1eHYBTYjvVDH_Wk",
+            authDomain: "rekindle-socials.firebaseapp.com",
+            projectId: "rekindle-socials",
+            storageBucket: "rekindle-socials.firebasestorage.app",
+            messagingSenderId: "1004814440293",
+            appId: "1:1004814440293:web:abc94996445575be9b338c",
+            databaseURL: "https://rekindle-socials-default-rtdb.firebaseio.com"
+        };
+
         firebase.initializeApp(firebaseConfig);
+        var socialApp = firebase.initializeApp(socialConfig, 'social');
         var auth = firebase.auth();
         var db = firebase.database();
+        var mainDb = firebase.firestore();
+        try {
+            if (mainDb.settings) {
+                mainDb.settings({
+                    experimentalForceLongPolling: true,
+                    merge: true
+                });
+            }
+        } catch (e) { console.warn('Firestore settings error:', e); }
+        var socialDb = socialApp.firestore();
+        var socialAuth = socialApp.auth();
         var ADMIN_EMAIL = 'ukiyo@rekindle.ink';
         var supporterUsers = {};
 
         function fetchSupporters() {
-            var fs = firebase.firestore();
-            try {
-                if (fs.settings) {
-                    fs.settings({ experimentalForceLongPolling: true });
-                }
-            } catch (e) { }
-            return fs.collection('config').doc('supporters').get().then(function (doc) {
+            return mainDb.collection('config').doc('supporters').get().then(function (doc) {
                 if (doc.exists) {
                     var data = doc.data();
                     supporterUsers = {};
@@ -1033,6 +1050,7 @@
         var topicStatesLoaded = false;
         var allTopicsCache = [];
         var commentsListener = null;
+        var commentsUnsubscribe = null;
         var renderedCommentIds = {}; // Tracks DOM-rendered comments for the active topic (Kindle memory)
         var isModMode = false;
         var isCurrentUserMod = false;
@@ -1075,47 +1093,42 @@
                 currentUserRulesVersion = snap.val() || 0;
             });
 
-            fetchSupporters().then(function () {
-                if (topicsLoaded) return;
-                topicsLoaded = true;
+            var getSocialToken = firebase.functions().httpsCallable('getSocialToken');
+            getSocialToken({}).then(function (result) {
+                return socialAuth.signInWithCustomToken(result.data.token);
+            }).then(function () {
+                fetchSupporters().then(function () {
+                    if (topicsLoaded) return;
+                    topicsLoaded = true;
 
-                // Load topic states first, THEN start the topics listener
-                loadTopicStates().then(function () {
+                    // Load topic states first, THEN start the topics listener
+                    loadTopicStates().then(function () {
                         // Load topics
-                        topicsListenerRef = db.ref('topics').orderByChild('lastActive').limitToLast(200);
                         var deepLinkChecked = false;
-
-                        topicsListenerRef.on('child_added', function(snap) {
-                            var topic = Object.assign({ id: snap.key }, snap.val());
-                            var idx = allTopicsCache.findIndex(function(t) { return t.id === topic.id; });
-                            if (idx === -1) allTopicsCache.push(topic);
-                            else allTopicsCache[idx] = topic;
-                            debouncedRenderSidebar();
-                            if (!deepLinkChecked) {
-                                deepLinkChecked = true;
-                                var params = new URLSearchParams(window.location.search);
-                                var tid = params.get('topic_id');
-                                if (tid && !currentTopicId) selectTopic(tid);
-                            }
-                        });
-
-                        topicsListenerRef.on('child_changed', function(snap) {
-                            var topic = Object.assign({ id: snap.key }, snap.val());
-                            var idx = allTopicsCache.findIndex(function(t) { return t.id === topic.id; });
-                            if (idx !== -1) allTopicsCache[idx] = topic;
-                            else allTopicsCache.push(topic);
-                            if (fullTopicsSnapshot) {
-                                var fi = fullTopicsSnapshot.findIndex(function(t) { return t.id === topic.id; });
-                                if (fi !== -1) fullTopicsSnapshot[fi] = topic;
-                            }
-                            debouncedRenderSidebar();
-                        });
-
-                        topicsListenerRef.on('child_removed', function(snap) {
-                            allTopicsCache = allTopicsCache.filter(function(t) { return t.id !== snap.key; });
-                            if (fullTopicsSnapshot) fullTopicsSnapshot = fullTopicsSnapshot.filter(function(t) { return t.id !== snap.key; });
-                            debouncedRenderSidebar();
-                        });
+                        topicsListenerRef = socialDb.collection('topics')
+                            .orderBy('lastActive', 'desc').limit(200)
+                            .onSnapshot(function(snapshot) {
+                                allTopicsCache = [];
+                                snapshot.forEach(function(doc) {
+                                    var data = doc.data();
+                                    if (data.lastActive && typeof data.lastActive.toMillis === 'function') {
+                                        data.lastActive = data.lastActive.toMillis();
+                                    }
+                                    if (data.timestamp && typeof data.timestamp.toMillis === 'function') {
+                                        data.timestamp = data.timestamp.toMillis();
+                                    }
+                                    allTopicsCache.push(Object.assign({ id: doc.id }, data));
+                                });
+                                debouncedRenderSidebar();
+                                if (!deepLinkChecked) {
+                                    deepLinkChecked = true;
+                                    var params = new URLSearchParams(window.location.search);
+                                    var tid = params.get('topic_id');
+                                    if (tid && !currentTopicId) selectTopic(tid);
+                                }
+                            }, function(err) {
+                                console.error('Topics listener error:', err);
+                            });
                     });
                     checkAdmin();
                     // Check moderator status
@@ -1127,6 +1140,9 @@
                         }
                     });
                 });
+            }).catch(function (err) {
+                console.error('Social auth failed:', err);
+            });
 
                 currentUserName = (user.email || user.uid).split('@')[0];
 
@@ -1139,6 +1155,7 @@
                 }
             } else {
                 document.getElementById('login-overlay').style.display = 'flex';
+                if (socialAuth) socialAuth.signOut();
             }
         });
 
@@ -1234,12 +1251,18 @@
                 return;
             }
             isFetchingFullTopics = true;
-            db.ref('topics').orderByChild('lastActive').limitToLast(500).once('value').then(function(snap) {
+            socialDb.collection('topics').orderBy('lastActive', 'desc').limit(500).get().then(function(snapshot) {
                 fullTopicsSnapshot = [];
-                snap.forEach(function(child) {
-                    fullTopicsSnapshot.push(Object.assign({ id: child.key }, child.val()));
+                snapshot.forEach(function(doc) {
+                    var data = doc.data();
+                    if (data.lastActive && typeof data.lastActive.toMillis === 'function') {
+                        data.lastActive = data.lastActive.toMillis();
+                    }
+                    if (data.timestamp && typeof data.timestamp.toMillis === 'function') {
+                        data.timestamp = data.timestamp.toMillis();
+                    }
+                    fullTopicsSnapshot.push(Object.assign({ id: doc.id }, data));
                 });
-                fullTopicsSnapshot.reverse();
                 fullTopicsSnapshotExpiry = Date.now() + 5 * 60 * 1000;
                 isFetchingFullTopics = false;
                 renderSidebar();
@@ -1396,8 +1419,16 @@
             var topic = allTopicsCache.find(function(t) { return t.id === id; });
             if (!topic) {
                 // Topic is outside the live window (old/inactive) — fetch by ID once and retry
-                db.ref('topics/' + id).once('value').then(function(snap) {
-                    if (snap.exists()) {
+                socialDb.collection('topics').doc(id).get().then(function(doc) {
+                    if (doc.exists) {
+                        var data = doc.data();
+                        if (data.lastActive && typeof data.lastActive.toMillis === 'function') {
+                            data.lastActive = data.lastActive.toMillis();
+                        }
+                        if (data.timestamp && typeof data.timestamp.toMillis === 'function') {
+                            data.timestamp = data.timestamp.toMillis();
+                        }
+                        allTopicsCache.push(Object.assign({ id: doc.id }, data));
                         selectTopic(id, forceReload);
                     }
                 });
@@ -1465,12 +1496,11 @@
             historyEl.innerHTML = '<div style="text-align:center; padding:20px; color:#666;" data-i18n="topics.msg.loading_comments">' + window.t('topics.msg.loading_comments', 'Loading comments...') + '</div>';
 
             // Always detach any existing listeners (forceReload reuses same id).
-            // We detach via the bare-ref path, which removes callbacks on both the
-            // limitToLast(child_added) query and the bare-ref child_removed listener.
-            if (commentsListener) {
-                db.ref('topic_comments/' + commentsListener).off();
+            if (commentsUnsubscribe) {
+                commentsUnsubscribe();
             }
             commentsListener = id;
+            commentsUnsubscribe = null;
             renderedCommentIds = {};
             oldestRenderedTs = null;
             isLoadingMoreComments = false;
@@ -1488,43 +1518,49 @@
             }
 
             // BATCHED LOADING (mirrors kindlechat general-channel pattern):
-            // - Live window: limitToLast(MESSAGES_INITIAL_LOAD) for child_added (new messages)
-            // - Pagination: scroll-to-top fetches MESSAGES_PER_BATCH older messages via .once()
-            // - Deletes: separate bare-ref child_removed listener so window-slide
-            //   (a new message pushing the oldest out of the live query) does NOT
-            //   wipe paginated messages from the DOM.
-            var liveCommentsRef = db.ref('topic_comments/' + id)
-                .orderByChild('timestamp')
-                .limitToLast(MESSAGES_INITIAL_LOAD);
+            // - Live window: limitToLast(MESSAGES_INITIAL_LOAD) for onSnapshot
+            // - Pagination: scroll-to-top fetches MESSAGES_PER_BATCH older messages via .get()
+            var liveCommentsQuery = socialDb.collection('topics').doc(id).collection('comments')
+                .orderBy('timestamp', 'asc').limitToLast(MESSAGES_INITIAL_LOAD);
 
-            liveCommentsRef.on('child_added', function (c) {
+            commentsUnsubscribe = liveCommentsQuery.onSnapshot(function(snapshot) {
                 if (commentsListener !== id) return; // stale event after topic switch
-                if (renderedCommentIds[c.key]) return;
-                renderedCommentIds[c.key] = true;
-                var data = c.val();
-                data.id = c.key;
+                snapshot.docChanges().forEach(function(change) {
+                    var doc = change.doc;
+                    var data = doc.data();
+                    data.id = doc.id;
 
-                // Track range bounds for pagination
-                if (typeof data.timestamp === 'number') {
-                    if (oldestRenderedTs === null || data.timestamp < oldestRenderedTs) {
-                        oldestRenderedTs = data.timestamp;
+                    // Normalize Firestore Timestamp to ms
+                    if (data.timestamp && typeof data.timestamp.toMillis === 'function') {
+                        data.timestamp = data.timestamp.toMillis();
                     }
-                }
 
-                // Auto-scroll only if the user is already near the bottom; otherwise
-                // preserve their scroll position so they can keep reading.
-                var nearBottom = (historyEl.scrollHeight - historyEl.clientHeight) - historyEl.scrollTop < 80;
-                appendMessage(data);
-                if (nearBottom) historyEl.scrollTop = historyEl.scrollHeight;
-            });
+                    if (change.type === 'added') {
+                        if (!data.timestamp) return; // skip pending server timestamp
+                        if (renderedCommentIds[doc.id]) return;
+                        renderedCommentIds[doc.id] = true;
 
-            // Genuine deletes (mod-mode) — bare ref so window-slide doesn't fire here.
-            db.ref('topic_comments/' + id).on('child_removed', function (c) {
-                if (commentsListener !== id) return;
-                if (!renderedCommentIds[c.key]) return;
-                delete renderedCommentIds[c.key];
-                var msgEl = historyEl.querySelector('[data-msg-id="' + c.key + '"]');
-                if (msgEl && msgEl.parentNode) msgEl.parentNode.removeChild(msgEl);
+                        // Track range bounds for pagination
+                        if (typeof data.timestamp === 'number') {
+                            if (oldestRenderedTs === null || data.timestamp < oldestRenderedTs) {
+                                oldestRenderedTs = data.timestamp;
+                            }
+                        }
+
+                        // Auto-scroll only if the user is already near the bottom; otherwise
+                        // preserve their scroll position so they can keep reading.
+                        var nearBottom = (historyEl.scrollHeight - historyEl.clientHeight) - historyEl.scrollTop < 80;
+                        appendMessage(data);
+                        if (nearBottom) historyEl.scrollTop = historyEl.scrollHeight;
+                    } else if (change.type === 'removed') {
+                        if (!renderedCommentIds[doc.id]) return;
+                        delete renderedCommentIds[doc.id];
+                        var msgEl = historyEl.querySelector('[data-msg-id="' + doc.id + '"]');
+                        if (msgEl && msgEl.parentNode) msgEl.parentNode.removeChild(msgEl);
+                    }
+                });
+            }, function(err) {
+                console.error('Comments listener error:', err);
             });
         }
 
@@ -1555,7 +1591,6 @@
         }
 
         // Fetch the next older batch of comments and prepend them.
-        // Mirrors kindlechat.loadMoreGeneralFromRTDB.
         function loadMoreComments() {
             if (isLoadingMoreComments || noMoreComments) return;
             if (!commentsListener || !oldestRenderedTs) return;
@@ -1566,28 +1601,31 @@
             var oldScrollHeight = historyEl.scrollHeight;
             var topicId = commentsListener;
 
-            db.ref('topic_comments/' + topicId)
-                .orderByChild('timestamp')
-                .endAt(oldestRenderedTs - 0.001) // exclusive of current oldest
+            socialDb.collection('topics').doc(topicId).collection('comments')
+                .orderBy('timestamp', 'asc')
+                .endBefore(firebase.firestore.Timestamp.fromMillis(oldestRenderedTs))
                 .limitToLast(MESSAGES_PER_BATCH)
-                .once('value')
-                .then(function (snap) {
+                .get()
+                .then(function (snapshot) {
                     if (commentsListener !== topicId) return; // user switched topics mid-fetch
 
-                    if (!snap.exists()) {
+                    if (snapshot.empty) {
                         // Nothing before the oldest we have — beginning of history.
                         noMoreComments = true;
                         showEndOfCommentsMarker(historyEl);
                         return;
                     }
 
-                    // RTDB returns ascending; we must prepend in REVERSE so DOM order
-                    // ends up correct (matches kindlechat batch-prepend reasoning).
+                    // Firestore returns ascending; we must prepend in REVERSE so DOM order
+                    // ends up correct.
                     var batch = [];
-                    snap.forEach(function (c) {
-                        if (renderedCommentIds[c.key]) return;
-                        var data = c.val();
-                        data.id = c.key;
+                    snapshot.forEach(function (doc) {
+                        if (renderedCommentIds[doc.id]) return;
+                        var data = doc.data();
+                        data.id = doc.id;
+                        if (data.timestamp && typeof data.timestamp.toMillis === 'function') {
+                            data.timestamp = data.timestamp.toMillis();
+                        }
                         batch.push(data);
                     });
 
@@ -1598,10 +1636,7 @@
                         return;
                     }
 
-                    // Snapshot returned fewer than the limit — this is the last page.
-                    var snapshotSize = 0;
-                    snap.forEach(function () { snapshotSize++; });
-                    if (snapshotSize < MESSAGES_PER_BATCH) {
+                    if (snapshot.size < MESSAGES_PER_BATCH) {
                         noMoreComments = true;
                     }
 
@@ -1650,17 +1685,25 @@
 
         function deleteTopic(id) {
             showConfirmModal("Are you sure you want to delete this topic and all comments?", function () {
-                // Delete topic
-                db.ref('topics/' + id).remove();
-                // Delete comments
-                db.ref('topic_comments/' + id).remove();
-
-                if (currentTopicId === id) {
-                    currentTopicId = null;
-                    document.getElementById('chat-history').innerHTML = '';
-                    document.getElementById('current-topic-title').innerText = "Select a topic";
-                    document.getElementById('current-topic-icon').style.display = 'none';
-                }
+                // Delete all comments first, then the topic
+                socialDb.collection('topics').doc(id).collection('comments').get().then(function(snapshot) {
+                    var batch = socialDb.batch();
+                    snapshot.forEach(function(doc) {
+                        batch.delete(doc.ref);
+                    });
+                    return batch.commit();
+                }).then(function() {
+                    return socialDb.collection('topics').doc(id).delete();
+                }).then(function() {
+                    if (currentTopicId === id) {
+                        currentTopicId = null;
+                        document.getElementById('chat-history').innerHTML = '';
+                        document.getElementById('current-topic-title').innerText = "Select a topic";
+                        document.getElementById('current-topic-icon').style.display = 'none';
+                    }
+                }).catch(function(e) {
+                    console.error("Error deleting topic:", e);
+                });
             });
         }
 
@@ -1842,9 +1885,9 @@
             var isMod = isCurrentUserMod && isModeratorMode;
             if (isMod) {
                 showModDeleteModal("Delete this comment?", function(reason) {
-                    db.ref('topic_comments/' + currentTopicId + '/' + id).once('value').then(function(snap) {
-                        var commentData = snap.val();
-                        if (!commentData) return;
+                    socialDb.collection('topics').doc(currentTopicId).collection('comments').doc(id).get().then(function(doc) {
+                        if (!doc.exists) return;
+                        var commentData = doc.data();
                         var logKey = db.ref('mod_actions').push().key;
                         var updates = {};
                         updates['mod_actions/' + logKey] = {
@@ -1860,15 +1903,18 @@
                             topicId: currentTopicId,
                             undone: false
                         };
-                        updates['topic_comments/' + currentTopicId + '/' + id] = null;
-                        db.ref().update(updates).catch(function(e) {
-                            showAlertModal("Delete failed: " + e.message, "Error");
+                        return socialDb.collection('topics').doc(currentTopicId).collection('comments').doc(id).delete().then(function() {
+                            return db.ref().update(updates);
                         });
+                    }).catch(function(e) {
+                        showAlertModal("Delete failed: " + e.message, "Error");
                     });
                 });
             } else {
                 showConfirmModal("Delete this comment?", function() {
-                    db.ref('topic_comments/' + currentTopicId + '/' + id).remove();
+                    socialDb.collection('topics').doc(currentTopicId).collection('comments').doc(id).delete().catch(function(e) {
+                        console.error("Error deleting comment:", e);
+                    });
                 });
             }
         }
@@ -1928,29 +1974,35 @@
                 var comment = {
                     body: text,
                     authorId: currentUser.uid,
-                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 };
 
                 var postingTopicId = currentTopicId;
-                db.ref('topic_comments/' + postingTopicId).push(comment).then(function () {
+                socialDb.collection('topics').doc(postingTopicId).collection('comments').add(comment).then(function () {
                     isPostingComment = false;
                     if (btnSend) {
                         btnSend.disabled = false;
                         btnSend.style.opacity = '1';
                     }
-                    db.ref('topics/' + postingTopicId + '/commentCount').transaction(function (cnt) { return (cnt || 0) + 1; })
-                        .then(function (result) {
-                            // Update local read state so own comment doesn't show as unread
-                            if (result.committed && result.snapshot) {
-                                var newCount = result.snapshot.val() || 0;
-                                if (!userTopicStates[postingTopicId] || postingTopicId === '__proto__' || postingTopicId === 'constructor' || postingTopicId === 'prototype') userTopicStates[postingTopicId] = {};
-                                userTopicStates[postingTopicId].lastReadCount = newCount;
-                                if (currentUser) {
-                                    db.ref('users_private/' + currentUser.uid + '/topic_states/' + postingTopicId + '/lastReadCount').set(newCount);
-                                }
-                            }
+                    var topicRef = socialDb.collection('topics').doc(postingTopicId);
+                    socialDb.runTransaction(function(transaction) {
+                        return transaction.get(topicRef).then(function(doc) {
+                            var newCount = (doc.data().commentCount || 0) + 1;
+                            transaction.update(topicRef, {
+                                commentCount: newCount,
+                                lastActive: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                            return newCount;
                         });
-                    db.ref('topics/' + postingTopicId + '/lastActive').set(firebase.database.ServerValue.TIMESTAMP);
+                    }).then(function(newCount) {
+                        if (!userTopicStates[postingTopicId] || postingTopicId === '__proto__' || postingTopicId === 'constructor' || postingTopicId === 'prototype') userTopicStates[postingTopicId] = {};
+                        userTopicStates[postingTopicId].lastReadCount = newCount;
+                        if (currentUser) {
+                            db.ref('users_private/' + currentUser.uid + '/topic_states/' + postingTopicId + '/lastReadCount').set(newCount);
+                        }
+                    }).catch(function(e) {
+                        console.error("Error updating topic counters:", e);
+                    });
                 }).catch(function(err) {
                     isPostingComment = false;
                     if (btnSend) {
@@ -2174,7 +2226,7 @@
                 checkRules(function () {
                     if (editingTopicId) {
                         // UPDATING EXISTING
-                        db.ref('topics/' + editingTopicId).update({
+                        socialDb.collection('topics').doc(editingTopicId).update({
                             title: title,
                             subheading: subheading,
                             icon: selectedIconSvg
@@ -2198,13 +2250,15 @@
                             submitBtn.disabled = true;
                             submitBtn.innerText = "Checking...";
 
-                            db.ref('topics').orderByChild('authorId').equalTo(currentUser.uid).once('value').then(function (snap) {
+                            socialDb.collection('topics').where('authorId', '==', currentUser.uid).get().then(function (snapshot) {
                                 var recentlyCreated = false;
                                 var oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
 
-                                snap.forEach(function (childSnap) {
-                                    var topic = childSnap.val();
-                                    if (topic.timestamp && topic.timestamp > oneWeekAgo) {
+                                snapshot.forEach(function (doc) {
+                                    var topic = doc.data();
+                                    var ts = topic.timestamp;
+                                    if (ts && typeof ts.toMillis === 'function') ts = ts.toMillis();
+                                    if (ts && ts > oneWeekAgo) {
                                         recentlyCreated = true;
                                     }
                                 });
@@ -2247,19 +2301,18 @@
             doSubmit();
 
             function executeCreation() {
-                var newTopicRef = db.ref('topics').push();
-                newTopicRef.set({
+                socialDb.collection('topics').add({
                     title: title,
                     subheading: subheading,
                     body: "",
                     icon: selectedIconSvg,
                     authorId: currentUser.uid,
-                    timestamp: firebase.database.ServerValue.TIMESTAMP,
-                    lastActive: firebase.database.ServerValue.TIMESTAMP,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    lastActive: firebase.firestore.FieldValue.serverTimestamp(),
                     commentCount: 0
-                }).then(function () {
+                }).then(function (docRef) {
                     closeCreateModal();
-                    selectTopic(newTopicRef.key);
+                    selectTopic(docRef.id);
                 }).catch(function(err) {
                     if (err && err.code === 'PERMISSION_DENIED') {
                         showAlertModal("You are temporarily restricted from posting.");
@@ -2477,15 +2530,12 @@
         // until GC, and listeners keep firing if the tab is suspended/resumed.
         function detachAllListeners() {
             try {
-                if (commentsListener) {
-                    // .off() with no event-type arg detaches ALL listeners on the
-                    // path, including both the limitToLast(child_added) live query
-                    // and the bare-ref child_removed listener.
-                    db.ref('topic_comments/' + commentsListener).off();
-                    commentsListener = null;
+                if (commentsUnsubscribe) {
+                    commentsUnsubscribe();
+                    commentsUnsubscribe = null;
                 }
                 if (topicsListenerRef) {
-                    topicsListenerRef.off();
+                    topicsListenerRef(); // Firestore unsubscribe function
                     topicsListenerRef = null;
                 }
                 if (rulesListenerRef) {

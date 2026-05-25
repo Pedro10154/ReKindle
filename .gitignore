@@ -5,3 +5,4 @@
 /workers/rekindle-reader/node_modules/
 /.wrangler/
 service-account.json
+.env
