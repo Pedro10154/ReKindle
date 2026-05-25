@@ -878,6 +878,20 @@
     var rtdb = firebase.database();
     var firestore = firebase.firestore();
 
+    var socialConfig = {
+        apiKey: "AIzaSyBy_n32McwWZidFn28-1eHYBTYjvVDH_Wk",
+        authDomain: "rekindle-socials.firebaseapp.com",
+        projectId: "rekindle-socials",
+        storageBucket: "rekindle-socials.firebasestorage.app",
+        messagingSenderId: "1004814440293",
+        appId: "1:1004814440293:web:abc94996445575be9b338c",
+        databaseURL: "https://rekindle-socials-default-rtdb.firebaseio.com"
+    };
+
+    var socialApp = firebase.initializeApp(socialConfig, 'social');
+    var socialRtdb = socialApp.database();
+    var socialDb = socialApp.firestore();
+
     var ADMIN_EMAIL = 'ukiyo@rekindle.ink';
 
     auth.onAuthStateChanged(async function(user) {
@@ -927,6 +941,40 @@
     function escapeHtml(str) {
         if (!str) return '';
         return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function fsTimestampToMs(val) {
+        if (val && typeof val.toMillis === 'function') return val.toMillis();
+        if (typeof val === 'number') return val;
+        return 0;
+    }
+
+    async function resolveUsersPublic(uid) {
+        try {
+            var snap = await rtdb.ref('users_public/' + uid).once('value');
+            if (snap.exists()) return snap.val();
+        } catch (e) {}
+        try {
+            var socialSnap = await socialRtdb.ref('users_public/' + uid).once('value');
+            return socialSnap.val() || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    async function getAllUsersPublic() {
+        var users = {};
+        try {
+            var snap = await rtdb.ref('users_public').once('value');
+            users = snap.val() || {};
+        } catch (e) {}
+        try {
+            var socialSnap = await socialRtdb.ref('users_public').once('value');
+            var socialUsers = socialSnap.val() || {};
+            return Object.assign({}, users, socialUsers);
+        } catch (e) {
+            return users;
+        }
     }
 
     function displayIpForRole(ip) {
@@ -1138,15 +1186,13 @@
         var inputLower = input.toLowerCase();
 
         if (input.length > 20 && !input.includes(' ') && !input.includes('@')) {
-            var snap = await rtdb.ref('users_public/' + input).once('value');
-            if (snap.exists()) {
-                var d = snap.val();
+            var d = await resolveUsersPublic(input);
+            if (d) {
                 return { uid: input, emailHandle: d.email ? d.email.split('@')[0] : input, displayName: d.displayName || input };
             }
         }
 
-        var allSnap = await rtdb.ref('users_public').once('value');
-        var users = allSnap.val() || {};
+        var users = await getAllUsersPublic();
         for (var pair of Object.entries(users)) {
             var uid = pair[0], d = pair[1];
             var displayName = (d.displayName || '').toLowerCase();
@@ -1202,7 +1248,7 @@
             // --- KindleChat messages ---
             if (incChat) {
                 setStatus('Fetching KindleChat messages...');
-                var chatSnap = await rtdb.ref('kindlechat/messages')
+                var chatSnap = await socialRtdb.ref('kindlechat/messages')
                     .orderByChild('timestamp')
                     .startAt(cutoff)
                     .once('value');
@@ -1240,24 +1286,34 @@
             // --- Neighbourhood posts ---
             if (incNeighbourhood) {
                 setStatus('Fetching Neighbourhood posts...');
-                var nbSnap = await rtdb.ref('neighbourhood_posts')
-                    .orderByChild('timestamp')
-                    .startAt(cutoff)
-                    .once('value');
+                var fsCutoff = firebase.firestore.Timestamp.fromMillis(cutoff);
+                var nbSnap = await socialDb.collection('neighbourhood_posts')
+                    .where('timestamp', '>=', fsCutoff)
+                    .get();
 
                 var nbPosts = [];
-                nbSnap.forEach(function(child) {
-                    var p = child.val();
-                    if (p && p.timestamp >= cutoff) {
-                        if (filterUser && p.uid !== filterUser.uid) {
-                            var hasUserComment = p.comments && Object.values(p.comments).some(function(c) {
-                                return c.uid === filterUser.uid && c.timestamp >= cutoff;
+                var postPromises = [];
+                nbSnap.forEach(function(doc) {
+                    var p = doc.data();
+                    var ts = fsTimestampToMs(p.timestamp);
+                    if (ts < cutoff) return;
+                    if (filterUser && p.uid !== filterUser.uid) {
+                        postPromises.push((async function() {
+                            var cSnap = await socialDb.collection('neighbourhood_posts').doc(doc.id).collection('comments')
+                                .where('uid', '==', filterUser.uid)
+                                .get();
+                            var hasRecentComment = cSnap.docs.some(function(d) {
+                                return fsTimestampToMs(d.data().timestamp) >= cutoff;
                             });
-                            if (!hasUserComment) return;
-                        }
-                        nbPosts.push({ id: child.key, uid: p.uid || '', text: p.text || '', ts: p.timestamp || 0, comments: p.comments || null });
+                            if (hasRecentComment) {
+                                nbPosts.push({ id: doc.id, uid: p.uid || '', text: p.text || '', ts: ts });
+                            }
+                        })());
+                    } else {
+                        nbPosts.push({ id: doc.id, uid: p.uid || '', text: p.text || '', ts: ts });
                     }
                 });
+                await Promise.all(postPromises);
                 nbPosts.sort(function(a,b){ return a.ts - b.ts; });
                 neighbourhoodCount = nbPosts.length;
 
@@ -1272,24 +1328,25 @@
                         lines.push('');
                         lines.push('POST by ' + npName + ' [' + formatDate(np.ts) + ']: ' + np.text);
 
-                        // Comments are nested under the post node
-                        if (np.comments) {
-                            var nbComments = [];
-                            Object.keys(np.comments).forEach(function(cid) {
-                                var c = np.comments[cid];
-                                if (c && c.timestamp >= cutoff) {
-                                    if (filterUser && c.uid !== filterUser.uid) return;
-                                    nbComments.push({ uid: c.uid || '', text: c.text || '', ts: c.timestamp || 0 });
-                                }
-                            });
-                            nbComments.sort(function(a,b){ return a.ts - b.ts; });
-                            neighbourhoodCommentCount += nbComments.length;
-
-                            for (var nci = 0; nci < nbComments.length; nci++) {
-                                var nc = nbComments[nci];
-                                var ncName = await resolveUid(nc.uid);
-                                lines.push('  [' + formatDate(nc.ts) + '] ' + ncName + ': ' + nc.text);
+                        var nbComments = [];
+                        var cSnap = await socialDb.collection('neighbourhood_posts').doc(np.id).collection('comments')
+                            .where('timestamp', '>=', fsCutoff)
+                            .get();
+                        cSnap.forEach(function(cDoc) {
+                            var c = cDoc.data();
+                            var cTs = fsTimestampToMs(c.timestamp);
+                            if (cTs >= cutoff) {
+                                if (filterUser && c.uid !== filterUser.uid) return;
+                                nbComments.push({ uid: c.uid || '', text: c.text || '', ts: cTs });
                             }
+                        });
+                        nbComments.sort(function(a,b){ return a.ts - b.ts; });
+                        neighbourhoodCommentCount += nbComments.length;
+
+                        for (var nci = 0; nci < nbComments.length; nci++) {
+                            var nc = nbComments[nci];
+                            var ncName = await resolveUid(nc.uid);
+                            lines.push('  [' + formatDate(nc.ts) + '] ' + ncName + ': ' + nc.text);
                         }
                     }
                 }
@@ -1299,24 +1356,24 @@
             // --- Topics & Comments ---
             if (incTopics || incComments) {
                 setStatus('Fetching topics...');
-                var topicsSnap = await rtdb.ref('topics')
-                    .orderByChild('lastActive')
-                    .startAt(cutoff)
-                    .once('value');
+                var fsCutoff = firebase.firestore.Timestamp.fromMillis(cutoff);
+                var topicsSnap = await socialDb.collection('topics')
+                    .where('lastActive', '>=', fsCutoff)
+                    .get();
 
                 var topics = [];
-                topicsSnap.forEach(function(child) {
-                    var t = child.val();
+                topicsSnap.forEach(function(doc) {
+                    var t = doc.data();
                     if (t) {
                         topics.push({
-                            id: child.key,
+                            id: doc.id,
                             title: t.title || '(untitled)',
                             subheading: t.subheading || '',
                             body: t.body || '',
                             authorId: t.authorId || '',
                             authorName: t.authorName || '?',
-                            timestamp: t.timestamp || 0,
-                            lastActive: t.lastActive || 0
+                            timestamp: fsTimestampToMs(t.timestamp),
+                            lastActive: fsTimestampToMs(t.lastActive)
                         });
                     }
                 });
@@ -1332,16 +1389,16 @@
 
                     if (incComments) {
                         setStatus('Fetching comments for topic ' + (i+1) + ' of ' + topics.length + '...');
-                        var commSnap = await rtdb.ref('topic_comments/' + topic.id)
-                            .orderByChild('timestamp')
-                            .startAt(cutoff)
-                            .once('value');
+                        var commSnap = await socialDb.collection('topics').doc(topic.id).collection('comments')
+                            .where('timestamp', '>=', fsCutoff)
+                            .get();
 
-                        commSnap.forEach(function(c) {
-                            var cm = c.val();
-                            if (cm && cm.timestamp >= cutoff) {
+                        commSnap.forEach(function(cDoc) {
+                            var cm = cDoc.data();
+                            var cmTs = fsTimestampToMs(cm.timestamp);
+                            if (cmTs >= cutoff) {
                                 if (filterUser && cm.authorId !== filterUser.uid) return;
-                                commentsData.push({ ts: cm.timestamp, authorId: cm.authorId || '', body: cm.body || '' });
+                                commentsData.push({ ts: cmTs, authorId: cm.authorId || '', body: cm.body || '' });
                             }
                         });
                         commentsData.sort(function(a,b){ return a.ts - b.ts; });
@@ -1409,6 +1466,7 @@
     var ACTION_TYPE_LABELS = {
         'delete_chat_message':        'Deleted Chat Msg',
         'delete_topic_comment':       'Deleted Topic Comment',
+        'delete_topic':               'Deleted Topic',
         'delete_neighbourhood_post':  'Deleted NB Post',
         'delete_neighbourhood_comment': 'Deleted NB Comment',
         'timeout':                    'Timeout',
@@ -1509,6 +1567,69 @@
         }
     }
 
+    function reviveFirestoreData(data) {
+        if (data === null || typeof data !== 'object') return data;
+        if (Array.isArray(data)) return data.map(reviveFirestoreData);
+        var result = {};
+        for (var key in data) {
+            if (!data.hasOwnProperty(key)) continue;
+            var val = data[key];
+            if (val && typeof val === 'object' && typeof val.seconds === 'number' && typeof val.nanoseconds === 'number') {
+                result[key] = new firebase.firestore.Timestamp(val.seconds, val.nanoseconds);
+            } else if (val && typeof val === 'object' && !Array.isArray(val)) {
+                result[key] = reviveFirestoreData(val);
+            } else {
+                result[key] = val;
+            }
+        }
+        return result;
+    }
+
+    async function restoreModActionData(savedPath, savedData) {
+        if (!savedPath || !savedData) return;
+
+        // KindleChat messages live on social RTDB
+        if (savedPath.startsWith('kindlechat/messages/')) {
+            await socialRtdb.ref(savedPath).set(savedData);
+            return;
+        }
+
+        // Neighbourhood posts/comments live on social Firestore
+        if (savedPath.startsWith('neighbourhood_posts/')) {
+            var parts = savedPath.split('/');
+            var revived = reviveFirestoreData(savedData);
+            if (parts.length === 2) {
+                await socialDb.collection('neighbourhood_posts').doc(parts[1]).set(revived);
+            } else if (parts.length === 4 && parts[2] === 'comments') {
+                await socialDb.collection('neighbourhood_posts').doc(parts[1]).collection('comments').doc(parts[3]).set(revived);
+            }
+            return;
+        }
+
+        // Topic comments live on social Firestore
+        if (savedPath.startsWith('topic_comments/')) {
+            var parts = savedPath.split('/');
+            var revived = reviveFirestoreData(savedData);
+            if (parts.length === 3) {
+                await socialDb.collection('topics').doc(parts[1]).collection('comments').doc(parts[2]).set(revived);
+            }
+            return;
+        }
+
+        // Topics live on social Firestore
+        if (savedPath.startsWith('topics/')) {
+            var parts = savedPath.split('/');
+            var revived = reviveFirestoreData(savedData);
+            if (parts.length === 2) {
+                await socialDb.collection('topics').doc(parts[1]).set(revived);
+            }
+            return;
+        }
+
+        // Default: main RTDB
+        await rtdb.ref(savedPath).set(savedData);
+    }
+
     async function undoModAction(key, btn) {
         var note = await showConfirmWithNote('Undo this action? This cannot be undone again.', 'Reason for undoing (optional)');
         if (note === null) return;
@@ -1525,12 +1646,12 @@
 
             var auth = firebase.auth();
             var user = auth.currentUser;
-            var updates = {};
 
             if (entry.savedPath && entry.savedData) {
-                updates[entry.savedPath] = entry.savedData;
+                await restoreModActionData(entry.savedPath, entry.savedData);
             }
 
+            var updates = {};
             updates['mod_actions/' + key + '/undone'] = true;
             updates['mod_actions/' + key + '/undoneAt'] = firebase.database.ServerValue.TIMESTAMP;
             updates['mod_actions/' + key + '/undoneBy'] = user ? user.uid : 'admin';
@@ -1684,19 +1805,17 @@
 
             // Try direct UID lookup
             if (input.length > 20 && !input.includes(' ') && !input.includes('@')) {
-                var directSnap = await rtdb.ref('users_public/' + input).once('value');
-                if (directSnap.exists()) {
+                var directData = await resolveUsersPublic(input);
+                if (directData) {
                     uid = input;
-                    var d = directSnap.val();
-                    displayName = d.displayName || '';
-                    email = d.email || '';
+                    displayName = directData.displayName || '';
+                    email = directData.email || '';
                 }
             }
 
             // Scan users_public by displayName, username, or email
             if (!uid) {
-                var allSnap = await rtdb.ref('users_public').once('value');
-                var allUsers = allSnap.val() || {};
+                var allUsers = await getAllUsersPublic();
                 var inputLower = input.toLowerCase();
                 for (var entry of Object.entries(allUsers)) {
                     var u = entry[0], d = entry[1];
@@ -1716,8 +1835,7 @@
                 if (!stripeSnap.empty) {
                     var stripeDoc = stripeSnap.docs[0];
                     uid = stripeDoc.id;
-                    var pubSnap = await rtdb.ref('users_public/' + uid).once('value');
-                    var pubData = pubSnap.val() || {};
+                    var pubData = await resolveUsersPublic(uid) || {};
                     displayName = pubData.displayName || '';
                     email = pubData.email || '';
                 }
@@ -2037,8 +2155,8 @@
                 log('Scanning KindleChat (RTDB)...');
                 try {
                     var chatQueries = [];
-                    if (u.emailHandle) chatQueries.push(rtdb.ref('kindlechat/messages').orderByChild('user').equalTo(u.emailHandle).once('value'));
-                    chatQueries.push(rtdb.ref('kindlechat/messages').orderByChild('uid').equalTo(u.uid).once('value'));
+                    if (u.emailHandle) chatQueries.push(socialRtdb.ref('kindlechat/messages').orderByChild('user').equalTo(u.emailHandle).once('value'));
+                    chatQueries.push(socialRtdb.ref('kindlechat/messages').orderByChild('uid').equalTo(u.uid).once('value'));
                     var chatSnaps = await Promise.all(chatQueries);
                     var chatCount = 0;
                     var seenChatKeys = new Set();
@@ -2086,63 +2204,94 @@
 
                 // 3. Topics
                 log('Scanning Topics...');
-                var topicsSnap = await rtdb.ref('topics').orderByChild('authorId').equalTo(u.uid).once('value');
-                var topicCount = 0;
-                topicsSnap.forEach(function(child) {
-                    topicCount++;
-                    tasks.push({ type: 'Topic', key: child.key, rtdbRef: child.ref });
-                    log('  [topic] ' + (child.val().title || '').substring(0, 80));
-                });
-                log('  ->' + topicCount + ' topic(s)');
+                try {
+                    var topicsSnap = await socialDb.collection('topics').where('authorId', '==', u.uid).get();
+                    var topicCount = 0;
+                    topicsSnap.docs.forEach(function(topicDoc) {
+                        topicCount++;
+                        tasks.push({
+                            type: 'Topic',
+                            key: topicDoc.id,
+                            fsRef: topicDoc.ref,
+                            action: async function() {
+                                var commentsSnap = await socialDb.collection('topics').doc(topicDoc.id).collection('comments').get();
+                                var batch = socialDb.batch();
+                                commentsSnap.docs.forEach(function(c) { batch.delete(c.ref); });
+                                if (commentsSnap.docs.length > 0) await batch.commit();
+                                await socialDb.collection('topics').doc(topicDoc.id).delete();
+                            }
+                        });
+                        log('  [topic] ' + (topicDoc.data().title || '').substring(0, 80));
+                    });
+                    log('  ->' + topicCount + ' topic(s)');
+                } catch (e) {
+                    log('  (Topics scan error: ' + (e.message || e) + ')');
+                }
                 log('');
 
                 // 4. Topic Comments (full scan)
                 log('Scanning Topic Comments (full scan)...');
-                var allCommentsSnap = await rtdb.ref('topic_comments').once('value');
-                var commentCount = 0;
-                allCommentsSnap.forEach(function(topicNode) {
-                    topicNode.forEach(function(commentNode) {
-                        if (commentNode.val().authorId === u.uid) {
+                try {
+                    var allTopicsSnap = await socialDb.collection('topics').get();
+                    var commentCount = 0;
+                    for (var tDoc of allTopicsSnap.docs) {
+                        var commentsSnap = await tDoc.ref.collection('comments').where('authorId', '==', u.uid).get();
+                        for (var cDoc of commentsSnap.docs) {
                             commentCount++;
-                            tasks.push({ type: 'Topic Comment', key: commentNode.key, rtdbRef: commentNode.ref });
-                            log('  [comment] ' + (commentNode.val().body || commentNode.val().text || '').substring(0, 80));
+                            tasks.push({ type: 'Topic Comment', key: cDoc.id, fsRef: cDoc.ref });
+                            log('  [comment] ' + (cDoc.data().body || cDoc.data().text || '').substring(0, 80));
                         }
-                    });
-                });
-                log('  ->' + commentCount + ' comment(s)');
+                    }
+                    log('  ->' + commentCount + ' comment(s)');
+                } catch (e) {
+                    log('  (Topic comments scan error: ' + (e.message || e) + ')');
+                }
                 log('');
 
                 // 5. Neighbourhood Posts
                 log('Scanning Neighbourhood Posts...');
-                var nbPostsSnap = await rtdb.ref('neighbourhood_posts').orderByChild('uid').equalTo(u.uid).once('value');
-                var nbPostCount = 0;
-                nbPostsSnap.forEach(function(child) {
-                    nbPostCount++;
-                    tasks.push({ type: 'Neighbourhood Post', key: child.key, rtdbRef: child.ref });
-                    log('  [nb-post] ' + (child.val().text || '').substring(0, 80));
-                });
-                log('  ->' + nbPostCount + ' post(s)');
+                try {
+                    var nbPostsSnap = await socialDb.collection('neighbourhood_posts').where('uid', '==', u.uid).get();
+                    var nbPostCount = 0;
+                    nbPostsSnap.docs.forEach(function(nbDoc) {
+                        nbPostCount++;
+                        tasks.push({
+                            type: 'Neighbourhood Post',
+                            key: nbDoc.id,
+                            fsRef: nbDoc.ref,
+                            action: async function() {
+                                var commentsSnap = await socialDb.collection('neighbourhood_posts').doc(nbDoc.id).collection('comments').get();
+                                var batch = socialDb.batch();
+                                commentsSnap.docs.forEach(function(c) { batch.delete(c.ref); });
+                                if (commentsSnap.docs.length > 0) await batch.commit();
+                                await socialDb.collection('neighbourhood_posts').doc(nbDoc.id).delete();
+                            }
+                        });
+                        log('  [nb-post] ' + (nbDoc.data().text || '').substring(0, 80));
+                    });
+                    log('  ->' + nbPostCount + ' post(s)');
+                } catch (e) {
+                    log('  (Neighbourhood posts scan error: ' + (e.message || e) + ')');
+                }
                 log('');
 
                 // 6. Neighbourhood Comments (full scan)
                 log('Scanning Neighbourhood Comments (full scan)...');
-                var allNbSnap = await rtdb.ref('neighbourhood_posts').once('value');
-                var nbCommentCount = 0;
-                allNbSnap.forEach(function(postNode) {
-                    var comments = postNode.val().comments;
-                    if (comments) {
-                        Object.entries(comments).forEach(function(pair) {
-                            var cId = pair[0], cData = pair[1];
-                            if (cData.uid === u.uid) {
-                                nbCommentCount++;
-                                var ref = rtdb.ref('neighbourhood_posts/' + postNode.key + '/comments/' + cId);
-                                tasks.push({ type: 'Neighbourhood Comment', key: cId, rtdbRef: ref });
-                                log('  [nb-comment] ' + (cData.text || '').substring(0, 80));
-                            }
-                        });
+                try {
+                    var allNbSnap = await socialDb.collection('neighbourhood_posts').get();
+                    var nbCommentCount = 0;
+                    for (var postDoc of allNbSnap.docs) {
+                        var commentsSnap = await postDoc.ref.collection('comments').where('uid', '==', u.uid).get();
+                        for (var cDoc of commentsSnap.docs) {
+                            nbCommentCount++;
+                            tasks.push({ type: 'Neighbourhood Comment', key: cDoc.id, fsRef: cDoc.ref });
+                            log('  [nb-comment] ' + (cDoc.data().text || '').substring(0, 80));
+                        }
                     }
-                });
-                log('  ->' + nbCommentCount + ' comment(s)');
+                    log('  ->' + nbCommentCount + ' comment(s)');
+                } catch (e) {
+                    log('  (Neighbourhood comments scan error: ' + (e.message || e) + ')');
+                }
                 log('');
 
                 adminCleanupTasks = tasks;
@@ -2163,7 +2312,8 @@
                 for (var i = 0; i < tasks.length; i++) {
                     var task = tasks[i];
                     try {
-                        if (task.rtdbRef) await task.rtdbRef.remove();
+                        if (task.action) await task.action();
+                        else if (task.rtdbRef) await task.rtdbRef.remove();
                         else if (task.fsRef) await task.fsRef.delete();
                         deleted++;
                         log('[OK] ' + task.type + ' — ' + task.key);

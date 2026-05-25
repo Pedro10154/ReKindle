@@ -1791,27 +1791,70 @@
 
 
         function deleteTopic(id) {
-            showConfirmModal("Are you sure you want to delete this topic and all comments?", function () {
-                // Delete all comments first, then the topic
-                socialDb.collection('topics').doc(id).collection('comments').get().then(function(snapshot) {
-                    var batch = socialDb.batch();
-                    snapshot.forEach(function(doc) {
-                        batch.delete(doc.ref);
+            var isMod = isModMode || (isCurrentUserMod && isModeratorMode);
+            if (isMod) {
+                showModDeleteModal("Are you sure you want to delete this topic and all comments?", function(reason) {
+                    socialDb.collection('topics').doc(id).get().then(function(doc) {
+                        if (!doc.exists) return;
+                        var topicData = doc.data();
+                        var logKey = db.ref('mod_actions').push().key;
+                        var logEntry = {
+                            type: 'delete_topic',
+                            moderatorUid: currentUser.uid,
+                            moderatorName: currentUserName || currentUser.uid,
+                            targetUid: topicData.authorId || '',
+                            targetName: topicData.authorName || topicData.authorId || '',
+                            reason: reason || '',
+                            createdAt: firebase.database.ServerValue.TIMESTAMP,
+                            savedPath: 'topics/' + id,
+                            savedData: topicData,
+                            topicId: id,
+                            undone: false
+                        };
+                        return socialDb.collection('topics').doc(id).collection('comments').get().then(function(snapshot) {
+                            var batch = socialDb.batch();
+                            snapshot.forEach(function(doc) {
+                                batch.delete(doc.ref);
+                            });
+                            return batch.commit();
+                        }).then(function() {
+                            return socialDb.collection('topics').doc(id).delete();
+                        }).then(function() {
+                            return db.ref('mod_actions/' + logKey).set(logEntry);
+                        }).then(function() {
+                            if (currentTopicId === id) {
+                                currentTopicId = null;
+                                document.getElementById('chat-history').innerHTML = '';
+                                document.getElementById('current-topic-title').innerText = "Select a topic";
+                                document.getElementById('current-topic-icon').style.display = 'none';
+                            }
+                        });
+                    }).catch(function(e) {
+                        console.error("Error deleting topic:", e);
                     });
-                    return batch.commit();
-                }).then(function() {
-                    return socialDb.collection('topics').doc(id).delete();
-                }).then(function() {
-                    if (currentTopicId === id) {
-                        currentTopicId = null;
-                        document.getElementById('chat-history').innerHTML = '';
-                        document.getElementById('current-topic-title').innerText = "Select a topic";
-                        document.getElementById('current-topic-icon').style.display = 'none';
-                    }
-                }).catch(function(e) {
-                    console.error("Error deleting topic:", e);
                 });
-            });
+            } else {
+                showConfirmModal("Are you sure you want to delete this topic and all comments?", function() {
+                    socialDb.collection('topics').doc(id).collection('comments').get().then(function(snapshot) {
+                        var batch = socialDb.batch();
+                        snapshot.forEach(function(doc) {
+                            batch.delete(doc.ref);
+                        });
+                        return batch.commit();
+                    }).then(function() {
+                        return socialDb.collection('topics').doc(id).delete();
+                    }).then(function() {
+                        if (currentTopicId === id) {
+                            currentTopicId = null;
+                            document.getElementById('chat-history').innerHTML = '';
+                            document.getElementById('current-topic-title').innerText = "Select a topic";
+                            document.getElementById('current-topic-icon').style.display = 'none';
+                        }
+                    }).catch(function(e) {
+                        console.error("Error deleting topic:", e);
+                    });
+                });
+            }
         }
 
         function formatTopicTime(date) {
@@ -1989,7 +2032,7 @@
 
         function deleteComment(id) {
             if (!currentTopicId) return;
-            var isMod = isCurrentUserMod && isModeratorMode;
+            var isMod = (isCurrentUserMod && isModeratorMode) || isModMode;
             if (isMod) {
                 showModDeleteModal("Delete this comment?", function(reason) {
                     socialDb.collection('topics').doc(currentTopicId).collection('comments').doc(id).get().then(function(doc) {

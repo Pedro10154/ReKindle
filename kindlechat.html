@@ -2845,8 +2845,9 @@
                             savedData: msgData,
                             undone: false
                         };
-                        updates['kindlechat/messages/' + msgId] = null;
-                        rtdb.ref().update(updates)['catch'](function (e) {
+                        socialRtdb.ref('kindlechat/messages/' + msgId).remove().then(function () {
+                            return rtdb.ref('mod_actions/' + logKey).set(updates['mod_actions/' + logKey]);
+                        })['catch'](function (e) {
                             showModal("Delete failed: " + e.message);
                         });
                     });
@@ -3223,7 +3224,7 @@
         // --- GENERAL CHANNEL: Toggle reaction in Realtime Database ---
         function toggleGeneralReactionRTDB(msgId, reaction) {
             var userUID = currentUser.uid;
-            var reactionRef = rtdb.ref('kindlechat/messages/' + msgId + '/reactions/' + userUID);
+            var reactionRef = socialRtdb.ref('kindlechat/messages/' + msgId + '/reactions/' + userUID);
             var msgRef = socialRtdb.ref('kindlechat/messages/' + msgId);
 
             // Get current reaction first
