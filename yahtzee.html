@@ -343,7 +343,7 @@
         else firebase.app();
         
         const db = firebase.firestore();
-        if (db.settings) { try { db.settings({ experimentalForceLongPolling: true, merge: true }); } catch (e) { } }
+        if (db.settings) { try { db.settings({ experimentalForceLongPolling: true }); } catch (e) { } }
         const auth = firebase.auth();
         
         let uid = null;

@@ -920,7 +920,7 @@
                     db = firebase.firestore();
                     rtdb = firebase.database();
                     if (db.settings) {
-                        try { db.settings({ experimentalForceLongPolling: true, merge: true }); }
+                        try { db.settings({ experimentalForceLongPolling: true }); }
                         catch (e) { console.warn("Settings error:", e); }
                     }
                     isFirebaseAvailable = true;

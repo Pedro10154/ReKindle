@@ -927,7 +927,7 @@
 
         // Configure for Safari/Mac compatibility
         if (db.settings) {
-            try { db.settings({ experimentalForceLongPolling: true, merge: true }); } catch (e) { }
+            try { db.settings({ experimentalForceLongPolling: true }); } catch (e) { }
         }
 
         // =====================

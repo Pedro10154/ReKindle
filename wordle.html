@@ -602,7 +602,7 @@
         }
         const db = firebase.firestore();
         if (db.settings) {
-            try { db.settings({ experimentalForceLongPolling: true, merge: true }); } 
+            try { db.settings({ experimentalForceLongPolling: true }); } 
             catch (e) { console.warn("Settings error:", e); }
         }
         const auth = firebase.auth();
