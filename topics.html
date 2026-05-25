@@ -710,7 +710,9 @@
     <script src="time.js"></script>
     <script src="theme.js?v=17"></script>
     <script src="bad_words.js?v=4"></script>
+    <link rel="stylesheet" href="css/custom-select.css">
     <script src="js/i18n.js"></script>
+    <script src="js/custom-select.js"></script>
     <script src="js/age-verification.js"></script>
 </head>
 
@@ -890,7 +892,7 @@
                             data-i18n="topics.rules.4.text">Do not advertise your own links, servers, or
                             projects.</span></li>
                     <li style="margin-bottom: 10px;"><b data-i18n="topics.rules.5.title">Topic Limit:</b> <span
-                            data-i18n="topics.rules.5.text">You are limited to 1 topic per week. Make it
+                            data-i18n="topics.rules.5.text">You are limited to 1 topic per day. Make it
                             count!</span></li>
                 </ul>
                 <div style="margin-top:20px; display:flex; justify-content:center;">
@@ -1477,7 +1479,9 @@
                         if (data.timestamp && typeof data.timestamp.toMillis === 'function') {
                             data.timestamp = data.timestamp.toMillis();
                         }
-                        allTopicsCache.push(Object.assign({ id: doc.id }, data));
+                        if (!allTopicsCache.find(function(t) { return t.id === doc.id; })) {
+                            allTopicsCache.push(Object.assign({ id: doc.id }, data));
+                        }
                         selectTopic(id, forceReload);
                     }
                 });
@@ -2289,41 +2293,7 @@
                         });
                     } else {
                         // CREATING NEW
-                        var isAdmin = currentUser.email === 'ukiyo@rekindle.ink';
-                        if (isAdmin) {
-                            executeCreation();
-                        } else {
-                            // Check limit
-                            var submitBtn = document.getElementById('btn-submit-topic');
-                            submitBtn.disabled = true;
-                            submitBtn.innerText = "Checking...";
-
-                            socialDb.collection('topics').where('authorId', '==', currentUser.uid).get().then(function (snapshot) {
-                                var recentlyCreated = false;
-                                var oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-
-                                snapshot.forEach(function (doc) {
-                                    var topic = doc.data();
-                                    var ts = topic.timestamp;
-                                    if (ts && typeof ts.toMillis === 'function') ts = ts.toMillis();
-                                    if (ts && ts > oneWeekAgo) {
-                                        recentlyCreated = true;
-                                    }
-                                });
-
-                                if (recentlyCreated) {
-                                    showAlertModal("You are limited to creating 1 topic per week. Please wait a few days or edit an existing topic.");
-                                    submitBtn.disabled = false;
-                                    submitBtn.innerText = "Create";
-                                    return;
-                                }
-                                executeCreation();
-                            }).catch(function (err) {
-                                console.error("Limit check error:", err);
-                                submitBtn.disabled = false;
-                                submitBtn.innerText = "Create";
-                            });
-                        }
+                        executeCreation();
                     }
                 });
             };
@@ -2349,6 +2319,12 @@
             doSubmit();
 
             function executeCreation() {
+                var submitBtn = document.getElementById('btn-submit-topic');
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerText = window.t ? window.t('topics.btn.creating', 'Creating...') : 'Creating...';
+                }
+
                 var tokenSource = socialAuth.currentUser || currentUser;
                 tokenSource.getIdToken(true).then(function (token) {
                     return fetch(MODERATION_WORKER_URL, {
@@ -2365,6 +2341,10 @@
                         })
                     }).then(function (resp) { return resp.json(); });
                 }).then(function (result) {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerText = window.t ? window.t('topics.btn.new', 'Create') : 'Create';
+                    }
                     if (result.error) {
                         showAlertModal(result.error);
                         return;
@@ -2372,6 +2352,10 @@
                     closeCreateModal();
                     selectTopic(result.id);
                 }).catch(function(err) {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerText = window.t ? window.t('topics.btn.new', 'Create') : 'Create';
+                    }
                     if (err && err.code === 'PERMISSION_DENIED') {
                         showAlertModal("You are temporarily restricted from posting.");
                     } else if (err && err.message && err.message.toLowerCase().indexOf('moderation') !== -1) {

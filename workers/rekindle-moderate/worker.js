@@ -637,9 +637,9 @@ export default {
                     return new Response(JSON.stringify({ error: "Icon is required." }), { status: 400, headers });
                 }
 
-                // Rate limit: 1 topic per 7 days
+                // Rate limit: 1 topic per day
                 if (!isAdmin) {
-                    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+                    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
                     const queryResp = await fetch(`https://firestore.googleapis.com/v1/projects/rekindle-socials/databases/(default)/documents:runQuery`, {
                         method: "POST",
                         headers: { "Authorization": `Bearer ${accessToken}`, "Content-Type": "application/json" },
@@ -651,7 +651,7 @@ export default {
                                         op: "AND",
                                         filters: [
                                             { fieldFilter: { field: { fieldPath: "authorId" }, op: "EQUAL", value: { stringValue: uid } } },
-                                            { fieldFilter: { field: { fieldPath: "timestamp" }, op: "GREATER_THAN", value: { timestampValue: oneWeekAgo } } }
+                                            { fieldFilter: { field: { fieldPath: "timestamp" }, op: "GREATER_THAN", value: { timestampValue: oneDayAgo } } }
                                         ]
                                     }
                                 },
@@ -662,7 +662,7 @@ export default {
                     const queryData = await queryResp.json();
                     const hasRecent = Array.isArray(queryData) && queryData.some(d => d.document);
                     if (hasRecent) {
-                        return new Response(JSON.stringify({ error: "You are limited to creating 1 topic per week." }), { status: 429, headers });
+                        return new Response(JSON.stringify({ error: "You are limited to creating 1 topic per day." }), { status: 429, headers });
                     }
                 }
 

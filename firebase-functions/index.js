@@ -9,13 +9,12 @@
 
 const functions = require("firebase-functions/v1");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
-const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const { ImapFlow } = require("imapflow");
 const simpleParser = require("mailparser").simpleParser;
 const nodemailer = require("nodemailer");
-const { jwtVerify, createLocalJWKSet } = require("jose");
+// jose removed — no longer needed after AgeVerif integration removal
 
 admin.initializeApp();
 
@@ -50,74 +49,7 @@ const callOptions = {
     maxInstances: 10       // Limit concurrency for IMAP connections to avoid hitting limits
 };
 
-/**
- * AgeVerif OAuth2 secrets (managed by Google Cloud Secret Manager).
- * Use `firebase functions:secrets:set` to create these.
- */
-const ageverifClientId = defineSecret('AGEVERIF_CLIENT_ID');
-const ageverifClientSecret = defineSecret('AGEVERIF_CLIENT_SECRET');
-const AGEVERIF_REDIRECT_PATH = '/ageverif-callback.html';
-const AGEVERIF_AUTH_URL = 'https://api.ageverif.com/v1/oauth2/checker';
-const AGEVERIF_TOKEN_URL = 'https://api.ageverif.com/v1/oauth2/token';
-const AGEVERIF_RESOURCES_URL = 'https://api.ageverif.com/v1/oauth2/resources';
-
-/**
- * Helper: Build redirect URI from origin.
- * AgeVerif supports multiple redirect URIs — register all your domains in the Webmasters Platform.
- */
-function getRedirectUri(origin) {
-    let base = origin || allowedOrigins[1] || 'https://rekindle.ink';
-    return base + AGEVERIF_REDIRECT_PATH;
-}
-
-/**
- * Helper: Exchange AgeVerif OAuth2 code for access token.
- */
-async function exchangeAgeVerifCode(code, redirectUri, clientId, clientSecret) {
-    if (!clientId || !clientSecret) {
-        throw new Error('AgeVerif OAuth2 credentials not configured');
-    }
-
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-
-    const res = await fetch(AGEVERIF_TOKEN_URL, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Basic ${credentials}`,
-            'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: new URLSearchParams({
-            grant_type: 'authorization_code',
-            code,
-            redirect_uri: redirectUri
-        }).toString()
-    });
-
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Token exchange failed: ${res.status} ${text}`);
-    }
-
-    return await res.json();
-}
-
-/**
- * Helper: Fetch verification resources from AgeVerif using access token.
- */
-async function fetchAgeVerifResources(accessToken) {
-    const res = await fetch(AGEVERIF_RESOURCES_URL, {
-        headers: {
-            'Authorization': `Bearer ${accessToken}`
-        }
-    });
-
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Resources fetch failed: ${res.status} ${text}`);
-    }
-
-    return await res.json();
-}
+// AgeVerif integration removed — replaced with self-declaration flow.
 
 /**
  * Default minimum legal age for social media by country (ISO 3166-1 alpha-2).
@@ -249,27 +181,6 @@ async function getMinimumSocialMediaAge(countryCode) {
     return DEFAULT_SOCIAL_MEDIA_MIN_AGE[code] || DEFAULT_SOCIAL_MEDIA_MIN_AGE.DEFAULT;
 }
 
-/**
- * Verify an AgeVerif JWT token server-side.
- * Returns the decoded payload if valid, throws otherwise.
- */
-async function verifyAgeVerifToken(token) {
-    // Fetch JWKS from AgeVerif
-    const jwksRes = await fetch('https://api.ageverif.com/v1/.well-known/jwks.json');
-    if (!jwksRes.ok) {
-        throw new Error('Failed to fetch AgeVerif JWKS');
-    }
-    const jwks = await jwksRes.json();
-    const keystore = createLocalJWKSet(jwks);
-
-    const { payload } = await jwtVerify(token, keystore, {
-        issuer: 'https://api.ageverif.com/v1',
-        clockTolerance: 60, // 1 minute leeway
-    });
-
-    return payload;
-}
-
 async function logModAction(type, targetUid, targetName, reason, extra = {}) {
     const logKey = admin.database().ref('mod_actions').push().key;
     const entry = {
@@ -288,141 +199,73 @@ async function logModAction(type, targetUid, targetName, reason, extra = {}) {
 }
 
 /**
- * Start an AgeVerif OAuth2 verification session.
- * Generates a session ID, stores it in RTDB, and returns the AgeVerif auth URL.
- *
- * Expects: { redirectApp: string } — URL of the app to redirect back to
- * Returns: { sessionId: string, authUrl: string }
+ * Calculate age from date of birth.
  */
-exports.startAgeVerification = onCall({ ...callOptions, secrets: [ageverifClientId] }, async (request) => {
+function calculateAge(day, month, year) {
+    const today = new Date();
+    let age = today.getFullYear() - year;
+    const m = today.getMonth() + 1 - month;
+    if (m < 0 || (m === 0 && today.getDate() < day)) {
+        age--;
+    }
+    return age;
+}
+
+/**
+ * Verify age via self-declared date of birth and country.
+ * Server-side calculation enforces country-specific minimum social-media age.
+ *
+ * Expects: { dob: { day: number, month: number, year: number }, country: string }
+ * Returns: { success: boolean, reason?: string, country?: string, age?: number, minimumAge?: number }
+ */
+exports.verifyAgeSelfDeclaration = onCall(callOptions, async (request) => {
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'Must be signed in.');
     }
 
-    const clientId = ageverifClientId.value();
-    if (!clientId) {
-        throw new HttpsError('failed-precondition', 'AgeVerif OAuth2 not configured on server.');
+    const { dob, country } = request.data || {};
+    if (!dob || typeof dob !== 'object') {
+        throw new HttpsError('invalid-argument', 'Missing date of birth.');
     }
 
-    const { redirectApp } = request.data || {};
-    const uid = request.auth.uid;
-    const origin = request.rawRequest?.headers?.origin || allowedOrigins[1];
-    const redirectUri = getRedirectUri(origin);
+    const day = parseInt(dob.day, 10);
+    const month = parseInt(dob.month, 10);
+    const year = parseInt(dob.year, 10);
+    const countryCode = (country || '').toUpperCase();
 
-    logger.info('startAgeVerification redirectUri:', redirectUri, 'origin:', origin);
-
-    // Generate a random session ID
-    const sessionId = admin.database().ref().push().key;
-
-    // Store session in RTDB with 10-minute expiry
-    const sessionRef = admin.database().ref(`age_verification_sessions/${sessionId}`);
-    await sessionRef.set({
-        uid,
-        redirectApp: redirectApp || '',
-        redirectUri: redirectUri,
-        status: 'pending',
-        createdAt: admin.database.ServerValue.TIMESTAMP,
-        expiresAt: Date.now() + (10 * 60 * 1000) // 10 minutes
-    });
-
-    // Build AgeVerif OAuth2 authorization URL
-    const authUrl = new URL(AGEVERIF_AUTH_URL);
-    authUrl.searchParams.set('response_type', 'code');
-    authUrl.searchParams.set('client_id', clientId);
-    authUrl.searchParams.set('redirect_uri', redirectUri);
-    authUrl.searchParams.set('scope', 'read');
-    authUrl.searchParams.set('state', sessionId);
-
-    return { sessionId, authUrl: authUrl.toString() };
-});
-
-/**
- * Complete an AgeVerif OAuth2 verification.
- * Called by the callback page (may be on a different device, so no auth required).
- *
- * Expects: { code: string, state: string }
- * Returns: { success: boolean, reason?: string }
- */
-exports.completeAgeVerification = onCall({ ...callOptions, cors: true, secrets: [ageverifClientId, ageverifClientSecret] }, async (request) => {
-    const { code, state } = request.data || {};
-
-    if (!code || !state) {
-        throw new HttpsError('invalid-argument', 'Missing code or state.');
+    if (!day || !month || !year || !countryCode) {
+        throw new HttpsError('invalid-argument', 'Date of birth and country are required.');
     }
 
-    // Look up session in RTDB
-    const sessionRef = admin.database().ref(`age_verification_sessions/${state}`);
-    const sessionSnap = await sessionRef.once('value');
-    const session = sessionSnap.val();
-
-    if (!session) {
-        throw new HttpsError('invalid-argument', 'Invalid or expired session.');
+    // Validate date is real
+    const testDate = new Date(year, month - 1, day);
+    if (
+        testDate.getDate() !== day ||
+        testDate.getMonth() !== month - 1 ||
+        testDate.getFullYear() !== year
+    ) {
+        throw new HttpsError('invalid-argument', 'Invalid date of birth.');
     }
 
-    if (session.status !== 'pending') {
-        throw new HttpsError('already-exists', 'This session has already been processed.');
+    // Prevent future dates
+    if (testDate > new Date()) {
+        throw new HttpsError('invalid-argument', 'Date of birth cannot be in the future.');
     }
 
-    const uid = session.uid;
-    const redirectUri = session.redirectUri || getRedirectUri(request.rawRequest?.headers?.origin || allowedOrigins[1]);
+    const age = calculateAge(day, month, year);
+    const minimumAge = await getMinimumSocialMediaAge(countryCode);
 
-    const clientId = ageverifClientId.value();
-    const clientSecret = ageverifClientSecret.value();
-
-    let tokenResponse;
-    try {
-        tokenResponse = await exchangeAgeVerifCode(code, redirectUri, clientId, clientSecret);
-    } catch (e) {
-        logger.error('AgeVerif token exchange failed:', e.message);
-        await sessionRef.update({ status: 'failed', reason: 'Token exchange failed: ' + e.message });
-        throw new HttpsError('internal', 'Failed to exchange verification code.');
-    }
-
-    if (!tokenResponse.access_token) {
-        await sessionRef.update({ status: 'failed', reason: 'No access token returned' });
-        throw new HttpsError('internal', 'No access token returned from AgeVerif.');
-    }
-
-    let resources;
-    try {
-        resources = await fetchAgeVerifResources(tokenResponse.access_token);
-    } catch (e) {
-        logger.error('AgeVerif resources fetch failed:', e.message);
-        await sessionRef.update({ status: 'failed', reason: 'Resources fetch failed: ' + e.message });
-        throw new HttpsError('internal', 'Failed to fetch verification details.');
-    }
-
-    const verified = resources.resources?.verified === true;
-    const country = resources.resources?.country || '';
-    const ageThreshold = resources.resources?.age_threshold || 0;
-
-    if (!verified) {
-        await sessionRef.update({ status: 'failed', reason: 'Age verification was not completed successfully.' });
-        return { success: false, reason: 'Age verification was not completed successfully.' };
-    }
-
-    if (!country) {
-        await sessionRef.update({ status: 'failed', reason: 'Unable to determine verification country.' });
-        return { success: false, reason: 'Unable to determine verification country.' };
-    }
-
-    if (!ageThreshold || ageThreshold < 1) {
-        await sessionRef.update({ status: 'failed', reason: 'Invalid age threshold in verification response.' });
-        return { success: false, reason: 'Invalid age threshold in verification response.' };
-    }
-
-    const minimumAge = await getMinimumSocialMediaAge(country);
-
-    if (ageThreshold < minimumAge) {
-        await sessionRef.update({ status: 'failed', reason: `Verified age (${ageThreshold}) below minimum (${minimumAge})` });
+    if (age < minimumAge) {
         return {
             success: false,
-            reason: `Your verified age (${ageThreshold}) does not meet the minimum social media age requirement for your country (${minimumAge}).`,
-            country,
-            ageThreshold,
+            reason: `You must be at least ${minimumAge} years old to use social features in your country.`,
+            country: countryCode,
+            age,
             minimumAge
         };
     }
+
+    const uid = request.auth.uid;
 
     // Set custom claim on main project
     try {
@@ -431,13 +274,12 @@ exports.completeAgeVerification = onCall({ ...callOptions, cors: true, secrets: 
             ...(userRecord.customClaims || {}),
             ageVerified: true,
             ageVerifiedAt: Date.now(),
-            ageVerificationCountry: country,
-            ageVerificationThreshold: ageThreshold,
-            ageVerificationExpiresAt: tokenResponse.expires_at || 0,
+            ageVerificationCountry: countryCode,
+            ageVerificationThreshold: age,
+            ageVerificationMethod: 'self_declaration',
         });
     } catch (e) {
         logger.error('Failed to set ageVerified claim on main project:', e);
-        await sessionRef.update({ status: 'failed', reason: 'Failed to update Firebase custom claim' });
         throw new HttpsError('internal', 'Failed to update user verification status.');
     }
 
@@ -447,9 +289,9 @@ exports.completeAgeVerification = onCall({ ...callOptions, cors: true, secrets: 
             await socialAdminApp.auth().setCustomUserClaims(uid, {
                 ageVerified: true,
                 ageVerifiedAt: Date.now(),
-                ageVerificationCountry: country,
-                ageVerificationThreshold: ageThreshold,
-                ageVerificationExpiresAt: tokenResponse.expires_at || 0,
+                ageVerificationCountry: countryCode,
+                ageVerificationThreshold: age,
+                ageVerificationMethod: 'self_declaration',
             });
         } catch (e) {
             logger.error('Failed to set ageVerified claim on social project:', e);
@@ -460,143 +302,49 @@ exports.completeAgeVerification = onCall({ ...callOptions, cors: true, secrets: 
     try {
         await admin.firestore().collection('users').doc(uid).collection('ageVerification').doc('latest').set({
             verified: true,
-            country,
-            ageThreshold,
+            country: countryCode,
+            ageThreshold: age,
             minimumAge,
-            expiresAt: tokenResponse.expires_at ? new Date(tokenResponse.expires_at * 1000) : null,
+            dobDay: day,
+            dobMonth: month,
+            dobYear: year,
             verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-            method: 'oauth2',
+            method: 'self_declaration',
         });
     } catch (e) {
         logger.warn('Failed to store age verification metadata:', e.message);
     }
 
-    // Update session status so the Kindle can detect completion
-    await sessionRef.update({
-        status: 'verified',
-        country,
-        ageThreshold,
-        minimumAge,
-        completedAt: admin.database.ServerValue.TIMESTAMP,
-    });
-
     return {
         success: true,
-        country,
-        ageThreshold,
+        country: countryCode,
+        age,
         minimumAge
     };
 });
 
 /**
- * Verify age via AgeVerif checker script JWT and set Firebase Auth custom claim.
- * Kept as a fallback for direct JWT verification.
- *
- * Expects: { token: string } — the AgeVerif verification JWT from ageverif.verification.token
- * Returns: { success: boolean, country?: string, ageThreshold?: number, minimumAge?: number, reason?: string }
+ * DEPRECATED: Start an AgeVerif OAuth2 verification session.
+ * AgeVerif integration has been removed. Returns an error directing users to the new flow.
+ */
+exports.startAgeVerification = onCall(callOptions, async (request) => {
+    throw new HttpsError('failed-precondition', 'AgeVerif integration has been removed. Please use the self-declaration form.');
+});
+
+/**
+ * DEPRECATED: Complete an AgeVerif OAuth2 verification.
+ * AgeVerif integration has been removed. Returns an error directing users to the new flow.
+ */
+exports.completeAgeVerification = onCall(callOptions, async (request) => {
+    throw new HttpsError('failed-precondition', 'AgeVerif integration has been removed. Please use the self-declaration form.');
+});
+
+/**
+ * DEPRECATED: Verify age via AgeVerif JWT.
+ * AgeVerif integration has been removed. Returns an error directing users to the new flow.
  */
 exports.verifyAge = onCall(callOptions, async (request) => {
-    if (!request.auth) {
-        throw new HttpsError('unauthenticated', 'Must be signed in.');
-    }
-
-    const { token } = request.data || {};
-    if (!token || typeof token !== 'string') {
-        throw new HttpsError('invalid-argument', 'Missing AgeVerif token.');
-    }
-
-    let payload;
-    try {
-        payload = await verifyAgeVerifToken(token);
-    } catch (e) {
-        logger.error('AgeVerif JWT verification failed:', e.message);
-        throw new HttpsError('invalid-argument', 'Invalid or expired AgeVerif token.');
-    }
-
-    // Extract claims (AgeVerif uses snake_case in JWT payloads)
-    const country = payload.country || payload.cco || '';
-    const ageThreshold = payload.age_threshold || payload.ageThreshold || 0;
-    const verified = payload.verified === true;
-    const expiresAt = payload.expires_at || payload.exp || 0;
-
-    if (!verified) {
-        return { success: false, reason: 'Age verification was not completed successfully.' };
-    }
-
-    if (!country) {
-        return { success: false, reason: 'Unable to determine verification country.' };
-    }
-
-    if (!ageThreshold || ageThreshold < 1) {
-        return { success: false, reason: 'Invalid age threshold in verification token.' };
-    }
-
-    const minimumAge = await getMinimumSocialMediaAge(country);
-
-    if (ageThreshold < minimumAge) {
-        return {
-            success: false,
-            reason: `Your verified age (${ageThreshold}) does not meet the minimum social media age requirement for your country (${minimumAge}).`,
-            country,
-            ageThreshold,
-            minimumAge
-        };
-    }
-
-    const uid = request.auth.uid;
-
-    // Set custom claim on main project
-    try {
-        await admin.auth().setCustomUserClaims(uid, {
-            ...(request.auth.token || {}),
-            ageVerified: true,
-            ageVerifiedAt: Date.now(),
-            ageVerificationCountry: country,
-            ageVerificationThreshold: ageThreshold,
-            ageVerificationExpiresAt: expiresAt,
-        });
-    } catch (e) {
-        logger.error('Failed to set ageVerified claim on main project:', e);
-        throw new HttpsError('internal', 'Failed to update user verification status.');
-    }
-
-    // Set custom claim on social project
-    if (socialAdminApp) {
-        try {
-            await socialAdminApp.auth().setCustomUserClaims(uid, {
-                ageVerified: true,
-                ageVerifiedAt: Date.now(),
-                ageVerificationCountry: country,
-                ageVerificationThreshold: ageThreshold,
-                ageVerificationExpiresAt: expiresAt,
-            });
-        } catch (e) {
-            logger.error('Failed to set ageVerified claim on social project:', e);
-            // Non-fatal: the social token generation will inherit from main project next time
-        }
-    }
-
-    // Store verification metadata in Firestore for audit/revocation
-    try {
-        await admin.firestore().collection('users').doc(uid).collection('ageVerification').doc('latest').set({
-            verified: true,
-            country,
-            ageThreshold,
-            minimumAge,
-            expiresAt: expiresAt ? new Date(expiresAt * 1000) : null,
-            verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-            tokenJti: payload.jti || null,
-        });
-    } catch (e) {
-        logger.warn('Failed to store age verification metadata:', e.message);
-    }
-
-    return {
-        success: true,
-        country,
-        ageThreshold,
-        minimumAge
-    };
+    throw new HttpsError('failed-precondition', 'AgeVerif integration has been removed. Please use the self-declaration form.');
 });
 
 /*
