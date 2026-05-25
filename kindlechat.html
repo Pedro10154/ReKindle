@@ -1041,7 +1041,8 @@
 
         <!-- GUEST OVERLAY HTML -->
         <div id="guest-overlay">
-            <h2 data-i18n="kindlechat.guest_overlay">You need to be logged in to use KindleChat</h2>
+            <h2 id="guest-overlay-title" data-i18n="kindlechat.guest_overlay">You need to be logged in to use KindleChat</h2>
+            <p id="guest-overlay-message" style="font-size: 0.9rem; color: #666; margin: 10px 0; max-width: 300px;"></p>
             <br>
             <button class="sys-btn" onclick="window.location.href='index?login=true'"
                 data-i18n="kindlechat.btn.login">Log In</button>
@@ -1325,72 +1326,108 @@
             fetchSupporters(); // Load supporters list
 
             // Check Auth
-            auth.onAuthStateChanged(function (user) {
-                if (user) {
-                    currentUser = user;
-                    currentUsername = (user.email || user.uid).split('@')[0];
+            var authInitHandled = false;
 
-                    // Check moderator status (main project)
-                    rtdb.ref('moderators/' + user.uid).once('value').then(function (modSnap) {
-                        isCurrentUserMod = modSnap.val() === true;
-                        if (isCurrentUserMod) {
-                            var toggler = document.getElementById('mod-toggle-label');
-                            if (toggler) toggler.style.display = 'flex';
-                        }
-                    });
+            function handleKindlechatAuth(user) {
+                currentUser = user;
+                currentUsername = (user.email || user.uid).split('@')[0];
 
-                    // Check Rules Acceptance (main project)
-                    if (rulesListenerRef) rulesListenerRef.off();
-                    rulesListenerRef = rtdb.ref('users_private/' + user.uid + '/accepted_rules/kindlechat');
-                    rulesListenerRef.on('value', function (snap) {
-                        currentUserRulesVersion = snap.val() || 0;
-                    });
-
-                    // Check Pro Status (shared with other apps)
-                    isPro = (localStorage.getItem('rekindle_is_pro') !== 'false');
-                    const cachedExpiry = localStorage.getItem('rekindle_pro_expiry');
-                    if (cachedExpiry && parseInt(cachedExpiry) > Date.now()) {
-                        isPro = true;
+                // Check moderator status (main project)
+                rtdb.ref('moderators/' + user.uid).once('value').then(function (modSnap) {
+                    isCurrentUserMod = modSnap.val() === true;
+                    if (isCurrentUserMod) {
+                        var toggler = document.getElementById('mod-toggle-label');
+                        if (toggler) toggler.style.display = 'flex';
                     }
+                });
 
-                    document.getElementById('active-input').style.display = 'flex';
-                    document.getElementById('locked-input').style.display = 'none';
+                // Check Rules Acceptance (main project)
+                if (rulesListenerRef) rulesListenerRef.off();
+                rulesListenerRef = rtdb.ref('users_private/' + user.uid + '/accepted_rules/kindlechat');
+                rulesListenerRef.on('value', function (snap) {
+                    currentUserRulesVersion = snap.val() || 0;
+                });
 
-                    // Age verification check (server-side enforced)
-                    ensureAgeVerified(auth, { closable: false }).then(function () {
-                        // Authenticate with social project before loading social data
-                        var getSocialToken = firebase.functions().httpsCallable('getSocialToken');
-                        return getSocialToken({}).then(function (result) {
-                            return socialAuth.signInWithCustomToken(result.data.token);
-                        });
-                    }).then(function () {
-                        // Username/avatar cache is populated lazily as messages render
-                        // via rekindleFetchUserCard (reads tiny /user_cards records).
+                // Check Pro Status (shared with other apps)
+                isPro = (localStorage.getItem('rekindle_is_pro') !== 'false');
+                var cachedExpiry = localStorage.getItem('rekindle_pro_expiry');
+                if (cachedExpiry && parseInt(cachedExpiry) > Date.now()) {
+                    isPro = true;
+                }
 
-                        // Wait for supporters to load BEFORE loading messages to avoid race condition on Pro styling
-                        fetchSupporters().then(function () {
-                            loadMessages();
-                        })['catch'](function (err) {
-                            console.warn("Continuing without supporters:", err);
-                            loadMessages();
-                        });
-                    }).catch(function (err) {
-                        console.error('Age verification or social auth failed:', err);
-                        document.getElementById('app-layout').style.display = 'none';
-                        var overlay = document.getElementById('guest-overlay');
-                        if (overlay) {
-                            overlay.style.display = 'flex';
-                            var msgEl = overlay.querySelector('.guest-message');
-                            if (msgEl) msgEl.textContent = err.message || 'Age verification required to access social features.';
-                        }
-                        showModal(err.message || 'Age verification required to access social features.', false);
+                document.getElementById('active-input').style.display = 'flex';
+                document.getElementById('locked-input').style.display = 'none';
+
+                // Age verification check (server-side enforced)
+                ensureAgeVerified(auth, { closable: false }).then(function () {
+                    // Authenticate with social project before loading social data
+                    var getSocialToken = firebase.functions().httpsCallable('getSocialToken');
+                    return getSocialToken({}).then(function (result) {
+                        return socialAuth.signInWithCustomToken(result.data.token);
                     });
-                } else {
-                    currentUser = null;
+                }).then(function () {
+                    // Username/avatar cache is populated lazily as messages render
+                    // via rekindleFetchUserCard (reads tiny /user_cards records).
+
+                    // Wait for supporters to load BEFORE loading messages to avoid race condition on Pro styling
+                    fetchSupporters().then(function () {
+                        loadMessages();
+                    })['catch'](function (err) {
+                        console.warn("Continuing without supporters:", err);
+                        loadMessages();
+                    });
+                }).catch(function (err) {
+                    console.error('Age verification or social auth failed:', err);
                     document.getElementById('app-layout').style.display = 'none';
-                    document.getElementById('guest-overlay').style.display = 'flex';
-                    if (socialAuth) socialAuth.signOut();
-                    loadMessages();
+                    var overlay = document.getElementById('guest-overlay');
+                    if (overlay) {
+                        overlay.style.display = 'flex';
+                        var titleEl = document.getElementById('guest-overlay-title');
+                        var msgEl = document.getElementById('guest-overlay-message');
+                        if (titleEl) titleEl.textContent = 'Access Restricted';
+                        if (msgEl) msgEl.textContent = err.message || 'Age verification required to access social features.';
+                    }
+                    showModal(err.message || 'Age verification required to access social features.', false);
+                });
+            }
+
+            function handleKindlechatGuest() {
+                currentUser = null;
+                document.getElementById('app-layout').style.display = 'none';
+                var overlay = document.getElementById('guest-overlay');
+                if (overlay) {
+                    overlay.style.display = 'flex';
+                    var titleEl = document.getElementById('guest-overlay-title');
+                    var msgEl = document.getElementById('guest-overlay-message');
+                    if (titleEl) {
+                        titleEl.textContent = (typeof window.t === 'function')
+                            ? window.t('kindlechat.guest_overlay', 'You need to be logged in to use KindleChat')
+                            : 'You need to be logged in to use KindleChat';
+                    }
+                    if (msgEl) msgEl.textContent = '';
+                }
+                if (socialAuth) socialAuth.signOut();
+                loadMessages();
+            }
+
+            auth.onAuthStateChanged(function (user) {
+                if (authInitHandled) return;
+                if (user) {
+                    authInitHandled = true;
+                    handleKindlechatAuth(user);
+                } else {
+                    // KINDLE COMPATIBILITY: E-ink browsers are slow to restore auth state
+                    // from IndexedDB/localStorage. Give it a moment before showing guest UI.
+                    setTimeout(function () {
+                        if (authInitHandled) return;
+                        if (auth.currentUser) {
+                            authInitHandled = true;
+                            handleKindlechatAuth(auth.currentUser);
+                        } else {
+                            authInitHandled = true;
+                            handleKindlechatGuest();
+                        }
+                    }, 2500);
                 }
             });
 

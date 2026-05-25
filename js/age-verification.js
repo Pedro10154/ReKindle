@@ -29,13 +29,25 @@
             return Promise.reject(new Error('User must be signed in to verify age.'));
         }
 
-        // Check current token claims first
-        return auth.currentUser.getIdTokenResult(true).then(function(idTokenResult) {
+        // Check current token claims first (cached, no network)
+        return auth.currentUser.getIdTokenResult(false).then(function(idTokenResult) {
             if (idTokenResult.claims.ageVerified === true) {
                 return; // Already verified
             }
 
-            // Need to start OAuth2 flow
+            // Cached token says not verified; force refresh to be sure before starting QR flow
+            return auth.currentUser.getIdTokenResult(true).then(function(freshResult) {
+                if (freshResult.claims.ageVerified === true) {
+                    return; // Verified after refresh
+                }
+                // Need to start OAuth2 flow
+                return startOAuth2Flow(auth, options);
+            });
+        }).catch(function(err) {
+            // KINDLE COMPATIBILITY: Some E-ink browsers fail token refresh due to
+            // slow network or clock skew. Instead of hard-blocking, fall back to
+            // the QR flow so the user can still verify.
+            console.warn('Age verification token check failed, falling back to QR flow:', err);
             return startOAuth2Flow(auth, options);
         });
     }
@@ -86,8 +98,9 @@
             : '';
 
         modal.innerHTML =
-            '<div style="background:#fff;border:2px solid #000;box-shadow:4px 4px 0 #000;padding:25px;max-width:360px;width:90%;text-align:center;">' +
-            '<div style="font-size:16px;font-weight:bold;margin-bottom:15px;border-bottom:2px solid #000;padding-bottom:10px;">Age Verification Required</div>' +
+            '<div style="background:#fff;border:2px solid #000;box-shadow:4px 4px 0 #000;padding:25px;max-width:360px;width:90%;text-align:center;position:relative;">' +
+            '<button id="ageverif-home" title="Back to Home" style="position:absolute;top:8px;right:10px;width:18px;height:18px;border:2px solid #000;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:bold;font-family:sans-serif;font-size:0.9rem;line-height:1;padding:0;box-shadow:2px 2px 0 #000;z-index:2;">X</button>' +
+            '<div style="font-size:16px;font-weight:bold;margin-bottom:15px;border-bottom:2px solid #000;padding-bottom:10px;padding-right:30px;">Age Verification Required</div>' +
             '<div style="font-size:13px;margin-bottom:15px;line-height:1.5;">' +
             'To access social features, please verify your age.' +
             '</div>' +
@@ -98,13 +111,20 @@
             '<div style="font-size:12px;color:#555;margin-bottom:15px;">' +
             '<strong>On a Kindle?</strong> Scan this QR code with your phone to verify.' +
             '</div>' +
-            '<a href="' + escapeHtml(authUrl) + '" target="_blank" rel="noopener" style="display:inline-block;padding:10px 20px;border:2px solid #000;background:#ddd;color:#000;text-decoration:none;font-size:13px;font-weight:bold;">' +
-            'Verify on this device' +
-            '</a>' +
+            '<div style="font-size:11px;color:#555;">' +
+            '<a href="' + escapeHtml(authUrl) + '" target="_blank" rel="noopener" style="color:#000;text-decoration:underline;">Or verify on this device</a>' +
+            '</div>' +
             closeBtn +
             '</div>';
 
         document.body.appendChild(modal);
+
+        // Home / back button always available
+        document.getElementById('ageverif-home').addEventListener('click', function() {
+            modal.remove();
+            onCancel(new Error('Age verification was cancelled.'));
+            window.location.href = 'index';
+        });
 
         if (closable) {
             document.getElementById('ageverif-close').addEventListener('click', function() {

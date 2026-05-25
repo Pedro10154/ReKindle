@@ -1036,8 +1036,9 @@
         </div>
     </div>
     <div id="login-overlay" style="display: none;"> <!-- Hidden by default, shown by JS -->
-        <h2 data-i18n="suggestions.msg.login_required">Please Log In</h2>
-        <p data-i18n="suggestions.msg.login_desc">You need to be logged in to enable suggestions.</p>
+        <h2 id="login-overlay-title" data-i18n="suggestions.msg.login_required">Please Log In</h2>
+        <p id="login-overlay-desc" data-i18n="suggestions.msg.login_desc">You need to be logged in to enable suggestions.</p>
+        <p id="login-overlay-message" style="font-size: 0.9rem; color: #666; margin: 10px 0; max-width: 300px;"></p>
         <button class="sys-btn" onclick="window.location.href='index?login=true'" data-i18n="suggestions.btn.login">Log
             In</button>
     </div>
@@ -1210,51 +1211,87 @@
         ];
 
         // AUTH
-        auth.onAuthStateChanged(user => {
-            if (user) {
-                currentUser = user;
-                document.getElementById('login-overlay').style.display = 'none';
+        var authInitHandled = false;
 
-                // Initial Pro check from storage
-                isPlus = localStorage.getItem('rekindle_is_pro') !== 'false';
+        function handleNeighbourhoodAuth(user) {
+            currentUser = user;
+            document.getElementById('login-overlay').style.display = 'none';
 
-                // Age verification check (server-side enforced)
-                ensureAgeVerified(auth, { closable: false }).then(() => {
-                    // Authenticate with social project before loading social data
-                    const getSocialToken = firebase.functions().httpsCallable('getSocialToken');
-                    return getSocialToken({}).then((result) => {
-                        return socialAuth.signInWithCustomToken(result.data.token);
-                    });
-                }).then(() => {
-                    fetchSupporters().then(() => {
-                        renderSuggestedInterests();
-                        initAdminTools(user);
+            // Initial Pro check from storage
+            isPlus = localStorage.getItem('rekindle_is_pro') !== 'false';
 
-                        // DEEP LINK CHECK
-                        const params = new URLSearchParams(window.location.search);
-                        const uid = params.get('uid');
-                        if (uid) {
-                            // Switch to 'Find' tab which contains the view profile logic
-                            // We actually need to load the user profile into the view
-                            switchTab('list');
-                            loadOtherUserProfile(uid);
-                        } else {
-                            loadPosts();
-                        }
-                    });
-                }).catch((err) => {
-                    console.error('Age verification or social auth failed:', err);
-                    document.querySelector('.window').style.display = 'none';
-                    var overlay = document.getElementById('login-overlay');
-                    if (overlay) {
-                        overlay.style.display = 'flex';
-                        var msgEl = overlay.querySelector('.login-message');
-                        if (msgEl) msgEl.textContent = err.message || 'Age verification required to access social features.';
+            // Age verification check (server-side enforced)
+            ensureAgeVerified(auth, { closable: false }).then(function () {
+                // Authenticate with social project before loading social data
+                var getSocialToken = firebase.functions().httpsCallable('getSocialToken');
+                return getSocialToken({}).then(function (result) {
+                    return socialAuth.signInWithCustomToken(result.data.token);
+                });
+            }).then(function () {
+                fetchSupporters().then(function () {
+                    renderSuggestedInterests();
+                    initAdminTools(user);
+
+                    // DEEP LINK CHECK
+                    var params = new URLSearchParams(window.location.search);
+                    var uid = params.get('uid');
+                    if (uid) {
+                        // Switch to 'Find' tab which contains the view profile logic
+                        // We actually need to load the user profile into the view
+                        switchTab('list');
+                        loadOtherUserProfile(uid);
+                    } else {
+                        loadPosts();
                     }
                 });
+            }).catch(function (err) {
+                console.error('Age verification or social auth failed:', err);
+                document.querySelector('.window').style.display = 'none';
+                var overlay = document.getElementById('login-overlay');
+                if (overlay) {
+                    overlay.style.display = 'flex';
+                    var titleEl = document.getElementById('login-overlay-title');
+                    var msgEl = document.getElementById('login-overlay-message');
+                    if (titleEl) titleEl.textContent = 'Access Restricted';
+                    if (msgEl) msgEl.textContent = err.message || 'Age verification required to access social features.';
+                }
+            });
+        }
+
+        function handleNeighbourhoodGuest() {
+            var overlay = document.getElementById('login-overlay');
+            if (overlay) {
+                overlay.style.display = 'flex';
+                var titleEl = document.getElementById('login-overlay-title');
+                var msgEl = document.getElementById('login-overlay-message');
+                if (titleEl) {
+                    titleEl.textContent = (typeof window.t === 'function')
+                        ? window.t('suggestions.msg.login_required', 'Please Log In')
+                        : 'Please Log In';
+                }
+                if (msgEl) msgEl.textContent = '';
+            }
+            if (socialAuth) socialAuth.signOut();
+        }
+
+        auth.onAuthStateChanged(function (user) {
+            if (authInitHandled) return;
+            if (user) {
+                authInitHandled = true;
+                handleNeighbourhoodAuth(user);
             } else {
-                document.getElementById('login-overlay').style.display = 'flex';
-                if (socialAuth) socialAuth.signOut();
+                // KINDLE COMPATIBILITY: E-ink browsers are slow to restore auth state
+                // from IndexedDB/localStorage. Give it a moment before showing guest UI.
+                setTimeout(function () {
+                    if (authInitHandled) return;
+                    if (auth.currentUser) {
+                        authInitHandled = true;
+                        handleNeighbourhoodAuth(auth.currentUser);
+                    } else {
+                        authInitHandled = true;
+                        handleNeighbourhoodGuest();
+                    }
+                }, 2500);
             }
         });
 

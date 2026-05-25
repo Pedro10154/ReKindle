@@ -904,7 +904,8 @@
     </div>
     <!-- LOGIN OVERLAY -->
     <div id="login-overlay" style="display: none;">
-        <h2 data-i18n="suggestions.msg.login_required">Please Log In</h2>
+        <h2 id="login-overlay-title" data-i18n="suggestions.msg.login_required">Please Log In</h2>
+        <p id="login-overlay-message" style="font-size: 0.9rem; color: #666; margin: 10px 0; max-width: 300px;"></p>
         <button class="sys-btn" onclick="window.location.href='index?login=true'" data-i18n="suggestions.btn.login">Log
             In</button>
     </div>
@@ -1082,9 +1083,10 @@
 
         // AUTH
         var topicsLoaded = false;
-        auth.onAuthStateChanged(function (user) {
-            if (user) {
-                initPresence(user.uid);
+        var authInitHandled = false;
+
+        function handleTopicsAuth(user) {
+            initPresence(user.uid);
             currentUser = user;
             document.getElementById('login-overlay').style.display = 'none';
 
@@ -1151,23 +1153,58 @@
                 var overlay = document.getElementById('login-overlay');
                 if (overlay) {
                     overlay.style.display = 'flex';
-                    var msgEl = overlay.querySelector('.login-message');
+                    var titleEl = document.getElementById('login-overlay-title');
+                    var msgEl = document.getElementById('login-overlay-message');
+                    if (titleEl) titleEl.textContent = 'Access Restricted';
                     if (msgEl) msgEl.textContent = err.message || 'Age verification required to access social features.';
                 }
             });
 
-                currentUserName = (user.email || user.uid).split('@')[0];
+            currentUserName = (user.email || user.uid).split('@')[0];
 
-                // Enable Send Button
-                var btn = document.getElementById('btn-send');
-                if (btn) {
-                    btn.disabled = false;
-                    btn.style.opacity = '1';
-                    btn.style.cursor = 'pointer';
+            // Enable Send Button
+            var btn = document.getElementById('btn-send');
+            if (btn) {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+            }
+        }
+
+        function handleTopicsGuest() {
+            var overlay = document.getElementById('login-overlay');
+            if (overlay) {
+                overlay.style.display = 'flex';
+                var titleEl = document.getElementById('login-overlay-title');
+                var msgEl = document.getElementById('login-overlay-message');
+                if (titleEl) {
+                    titleEl.textContent = (typeof window.t === 'function')
+                        ? window.t('suggestions.msg.login_required', 'Please Log In')
+                        : 'Please Log In';
                 }
+                if (msgEl) msgEl.textContent = '';
+            }
+            if (socialAuth) socialAuth.signOut();
+        }
+
+        auth.onAuthStateChanged(function (user) {
+            if (authInitHandled) return;
+            if (user) {
+                authInitHandled = true;
+                handleTopicsAuth(user);
             } else {
-                document.getElementById('login-overlay').style.display = 'flex';
-                if (socialAuth) socialAuth.signOut();
+                // KINDLE COMPATIBILITY: E-ink browsers are slow to restore auth state
+                // from IndexedDB/localStorage. Give it a moment before showing guest UI.
+                setTimeout(function () {
+                    if (authInitHandled) return;
+                    if (auth.currentUser) {
+                        authInitHandled = true;
+                        handleTopicsAuth(auth.currentUser);
+                    } else {
+                        authInitHandled = true;
+                        handleTopicsGuest();
+                    }
+                }, 2500);
             }
         });
 
