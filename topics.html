@@ -1847,9 +1847,12 @@
                         };
                         return socialDb.collection('topics').doc(id).collection('comments').get().then(function(snapshot) {
                             var batch = socialDb.batch();
+                            var comments = {};
                             snapshot.forEach(function(doc) {
+                                comments[doc.id] = doc.data();
                                 batch.delete(doc.ref);
                             });
+                            logEntry.savedComments = comments;
                             return batch.commit();
                         }).then(function() {
                             return socialDb.collection('topics').doc(id).delete();

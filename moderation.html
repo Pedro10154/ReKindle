@@ -1647,7 +1647,7 @@
         return result;
     }
 
-    async function restoreModActionData(savedPath, savedData) {
+    async function restoreModActionData(savedPath, savedData, savedComments) {
         if (!savedPath || !savedData) return;
 
         // KindleChat messages live on social RTDB
@@ -1678,12 +1678,19 @@
             return;
         }
 
-        // Topics live on social Firestore
+        // Topics live on social Firestore (restore topic + all comments)
         if (savedPath.startsWith('topics/')) {
             var parts = savedPath.split('/');
             var revived = reviveFirestoreData(savedData);
             if (parts.length === 2) {
                 await socialDb.collection('topics').doc(parts[1]).set(revived);
+                // Restore comments if any were saved
+                if (savedComments && typeof savedComments === 'object') {
+                    for (var commentId in savedComments) {
+                        var commentData = reviveFirestoreData(savedComments[commentId]);
+                        await socialDb.collection('topics').doc(parts[1]).collection('comments').doc(commentId).set(commentData);
+                    }
+                }
             }
             return;
         }
@@ -1710,7 +1717,12 @@
             var user = auth.currentUser;
 
             if (entry.savedPath && entry.savedData) {
-                await restoreModActionData(entry.savedPath, entry.savedData);
+                await restoreModActionData(entry.savedPath, entry.savedData, entry.savedComments);
+            }
+
+            // Handle timeout undo: clear the actual timeout
+            if (entry.type === 'timeout') {
+                await rtdb.ref('timeouts/' + entry.targetUid).remove();
             }
 
             var updates = {};
@@ -2323,7 +2335,20 @@
 
         setAdminStatus('Clearing timeout...');
         try {
-            await rtdb.ref('timeouts/' + u.uid).remove();
+            var logKey = rtdb.ref('mod_actions').push().key;
+            var updates = {};
+            updates['timeouts/' + u.uid] = null;
+            updates['mod_actions/' + logKey] = {
+                type: 'timeout_cleared',
+                moderatorUid: currentUser ? currentUser.uid : 'admin',
+                moderatorName: currentUser && currentUser.email ? currentUser.email.split('@')[0] : 'admin',
+                targetUid: u.uid,
+                targetName: u.emailHandle || u.uid,
+                reason: 'Cleared via admin panel',
+                createdAt: firebase.database.ServerValue.TIMESTAMP,
+                undone: false
+            };
+            await rtdb.ref().update(updates);
             adminTargetUser.timeoutData = null;
             renderAdminUserInfo();
             setAdminStatus('Timeout cleared.');

@@ -3093,8 +3093,8 @@
                             postId: postId,
                             undone: false
                         };
-                        db.ref().update(updates).then(() => {
-                            return socialDb.collection('neighbourhood_posts').doc(postId).collection('comments').doc(commentId).delete();
+                        socialDb.collection('neighbourhood_posts').doc(postId).collection('comments').doc(commentId).delete().then(() => {
+                            return db.ref().update(updates);
                         }).catch(e => showAlertModal("Delete failed: " + e.message, "Error"));
                     });
                 });
@@ -3335,8 +3335,8 @@
                             savedData: postData,
                             undone: false
                         };
-                        db.ref().update(updates).then(() => {
-                            return socialDb.collection('neighbourhood_posts').doc(id).delete();
+                        socialDb.collection('neighbourhood_posts').doc(id).delete().then(() => {
+                            return db.ref().update(updates);
                         }).catch(e => showAlertModal("Delete failed: " + e.message, "Error"));
                     });
                 });
