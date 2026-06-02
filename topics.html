@@ -2206,6 +2206,11 @@
                             undone: false
                         };
                         return socialDb.collection('topics').doc(currentTopicId).collection('comments').doc(id).delete().then(function() {
+                            socialDb.collection('topics').doc(currentTopicId).update({
+                                commentCount: firebase.firestore.FieldValue.increment(-1)
+                            }).catch(function(e) {
+                                console.error("Error decrementing commentCount:", e);
+                            });
                             return db.ref().update(updates);
                         });
                     }).catch(function(e) {
@@ -2214,7 +2219,12 @@
                 });
             } else {
                 showConfirmModal("Delete this comment?", function() {
-                    socialDb.collection('topics').doc(currentTopicId).collection('comments').doc(id).delete().catch(function(e) {
+                    var topicRef = socialDb.collection('topics').doc(currentTopicId);
+                    topicRef.collection('comments').doc(id).delete().then(function() {
+                        return topicRef.update({
+                            commentCount: firebase.firestore.FieldValue.increment(-1)
+                        });
+                    }).catch(function(e) {
                         console.error("Error deleting comment:", e);
                     });
                 });

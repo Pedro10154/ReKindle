@@ -127,6 +127,32 @@ async function firestorePatch(docPath, data, accessToken) {
     }
 }
 
+async function firestoreCommitTransform(docPath, fieldTransforms, accessToken) {
+    const url = `https://firestore.googleapis.com/v1/projects/rekindle-socials/databases/(default)/documents:commit`;
+    const body = {
+        writes: [
+            {
+                transform: {
+                    document: `projects/rekindle-socials/databases/(default)/documents/${docPath}`,
+                    fieldTransforms
+                }
+            }
+        ]
+    };
+    const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`Firestore commit failed (${resp.status}): ${errText}`);
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /*  RTDB REST HELPERS                                                  */
 /* ------------------------------------------------------------------ */
@@ -854,8 +880,18 @@ export default {
                     timestamp: new Date()
                 }, accessToken);
 
-                // Update topic counters
-                let newCount = 0;
+                // Atomically increment commentCount and update lastActive
+                try {
+                    await firestoreCommitTransform(`topics/${topicId}`, [
+                        { fieldPath: "commentCount", increment: { integerValue: "1" } },
+                        { fieldPath: "lastActive", setToServerValue: "REQUEST_TIME" }
+                    ], accessToken);
+                } catch (e) {
+                    console.error("Error incrementing topic commentCount:", e);
+                }
+
+                // Read back the new count for the client
+                let newCount = 1;
                 try {
                     const topicResp = await fetch(`https://firestore.googleapis.com/v1/projects/rekindle-socials/databases/(default)/documents/topics/${topicId}`, {
                         headers: { "Authorization": `Bearer ${accessToken}` }
@@ -864,18 +900,12 @@ export default {
                         const topicDoc = await topicResp.json();
                         const countField = topicDoc.fields?.commentCount;
                         newCount = countField ? (countField.integerValue ? parseInt(countField.integerValue) : countField.doubleValue || 0) : 0;
-                        newCount += 1;
                     }
                 } catch (e) {
-                    console.error("Error fetching topic count:", e);
+                    console.error("Error fetching topic count after increment:", e);
                 }
 
-                await firestorePatch(`topics/${topicId}`, {
-                    commentCount: newCount || 1,
-                    lastActive: new Date()
-                }, accessToken);
-
-                return new Response(JSON.stringify({ success: true, id: commentId, commentCount: newCount || 1 }), { status: 200, headers });
+                return new Response(JSON.stringify({ success: true, id: commentId, commentCount: newCount }), { status: 200, headers });
             }
 
             // --- NEIGHBOURHOOD POST ---
