@@ -792,6 +792,29 @@
         .dashboard-calendar-widget {
             grid-column: 1 / -1;
         }
+        .db-world-clocks {
+            margin-top: 10px;
+            border-top: 1px dashed #999;
+            padding-top: 8px;
+            display: flex;
+            flex-direction: column;
+        }
+        .db-world-clock-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 3px 0;
+        }
+        .db-world-clock-name {
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+        }
+        .db-world-clock-time {
+            font-family: Arial, Helvetica, sans-serif;
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
         .dashboard-calendar-grid {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
@@ -1046,6 +1069,7 @@
                                 <div class="dashboard-widget-title"><span data-i18n="dashboard.localtime">Local Time</span></div>
                                 <div class="dashboard-time-display" id="db-time-val">--:--</div>
                                 <div class="dashboard-date-display" id="db-date-val">--</div>
+                                <div id="db-world-clocks" class="db-world-clocks"></div>
                             </div>
                             <div class="dashboard-widget">
                                 <div class="dashboard-widget-title">
@@ -2368,7 +2392,58 @@
                 const dv = document.getElementById('db-date-val');
                 if (tv) tv.textContent = h + ':' + m + ' ' + ampm;
                 if (dv) dv.textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+                updateDashboardWorldClocks();
             } catch(e) {}
+        }
+
+        function updateDashboardWorldClocks() {
+            var container = document.getElementById('db-world-clocks');
+            if (!container) return;
+            var cities = [];
+            try {
+                var raw = localStorage.getItem('rekindle_clocks');
+                if (raw) {
+                    var key = 'rek';
+                    var decoded = atob(raw);
+                    var res = '';
+                    for (var i = 0; i < decoded.length; i++) {
+                        res += String.fromCharCode(decoded.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+                    }
+                    cities = JSON.parse(res);
+                }
+                if (!cities || cities.length === 0) {
+                    cities = [
+                        { name: "New York", zone: "America/New_York" },
+                        { name: "London", zone: "Europe/London" },
+                        { name: "Tokyo", zone: "Asia/Tokyo" }
+                    ];
+                }
+            } catch (e) {
+                cities = [
+                    { name: "New York", zone: "America/New_York" },
+                    { name: "London", zone: "Europe/London" },
+                    { name: "Tokyo", zone: "Asia/Tokyo" }
+                ];
+            }
+            var html = '';
+            var now = new Date();
+            if (typeof window.rekindleGetZonedDate === 'function') {
+                now = window.rekindleGetZonedDate();
+            }
+            for (var i = 0; i < cities.length; i++) {
+                var city = cities[i];
+                var zoned = now;
+                if (city.zone && typeof window.rekindleGetDateInZone === 'function') {
+                    zoned = window.rekindleGetDateInZone(now, city.zone);
+                }
+                var h = zoned.getHours();
+                var m = zoned.getMinutes();
+                var ampm = h >= 12 ? 'PM' : 'AM';
+                h = h % 12 || 12;
+                m = m < 10 ? '0' + m : m;
+                html += '<div class="db-world-clock-row"><span class="db-world-clock-name">' + city.name + '</span><span class="db-world-clock-time">' + h + ':' + m + ' ' + ampm + '</span></div>';
+            }
+            container.innerHTML = html;
         }
 
         let currentCalMonth = null;
