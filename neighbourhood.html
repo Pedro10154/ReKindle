@@ -644,6 +644,7 @@
     <script src="js/i18n.js"></script>
     <script src="js/custom-select.js"></script>
     <script src="js/age-verification.js?v=2"></script>
+    <script src="js/emoji-render.js"></script>
 </head>
 
 <body>
@@ -2255,6 +2256,7 @@
             div.style.borderTop = '1px dashed #ccc';
             div.style.paddingTop = '4px';
             container.appendChild(div);
+            renderEmojis(div);
         }
 
         // ADMIN TOOLS (placeholder for future features)
@@ -2696,6 +2698,8 @@
                     </div>
                 `;
 
+                renderEmojis(div);
+
                 // Draw Avatar
                 const seed = (card && (card.customAvatar || card.avatarSeed)) ? (card.customAvatar || card.avatarSeed) : post.uid;
                 drawAvatar(avatarId, seed);
@@ -2824,6 +2828,8 @@
                     </div>
                     <div style="margin-top:2px; font-size:0.85rem; line-height:1.3;">${escapeHtml(displayText)}</div>
                 `;
+
+                renderEmojis(commentDiv);
             });
         }
 

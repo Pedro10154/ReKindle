@@ -545,6 +545,7 @@
     <script src="time.js"></script>
     <script src="pro-gate.js"></script>
     <script src="js/i18n.js"></script>
+    <script src="js/emoji-render.js"></script>
 </head>
 
 <body>
@@ -1342,6 +1343,7 @@
                 `;
                 el.onclick = () => openReader(post);
                 list.appendChild(el);
+                renderEmojis(el);
             });
 
             // TRIM DOM to prevent bloat
@@ -1366,6 +1368,7 @@
             // Substack API usually returns post content in `body_html`
             if (post.body_html) {
                 content.innerHTML = `<h1>${post.title}</h1>` + post.body_html;
+                renderEmojis(content);
             } else {
                 // Fetch full post if snippet
                 content.innerHTML = "Loading full content...";
@@ -1411,8 +1414,10 @@
                     }
                 }
 
-                document.getElementById('reader-content').innerHTML =
+                var readerContent = document.getElementById('reader-content');
+                readerContent.innerHTML =
                     `<h1>${data.title}</h1>` + (data.body_html || "<p>Content not available.</p>");
+                renderEmojis(readerContent);
 
             } catch (e) {
                 console.warn(e);

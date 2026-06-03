@@ -718,6 +718,7 @@
     <script src="js/i18n.js"></script>
     <script src="js/custom-select.js"></script>
     <script src="js/age-verification.js?v=2"></script>
+    <script src="js/emoji-render.js"></script>
 </head>
 
 <body>
@@ -1519,6 +1520,7 @@
                     '</div>' +
                     '</div>';
                 listEl.appendChild(el);
+                renderEmojis(el);
             });
         }
 
@@ -1990,6 +1992,8 @@
             } else {
                 historyEl.appendChild(msgEl);
             }
+
+            renderEmojis(msgEl);
 
             // Resolve real name and avatar (the underlying DB call is already async)
             if (msg.authorId) {
