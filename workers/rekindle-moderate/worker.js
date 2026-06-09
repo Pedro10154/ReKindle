@@ -154,6 +154,21 @@ async function firestoreCommitTransform(docPath, fieldTransforms, accessToken) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  FIRESTORE DELETE HELPER                                            */
+/* ------------------------------------------------------------------ */
+async function firestoreDelete(docPath, accessToken) {
+    const url = `https://firestore.googleapis.com/v1/projects/rekindle-socials/databases/(default)/documents/${docPath}`;
+    const resp = await fetch(url, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${accessToken}` }
+    });
+    if (!resp.ok && resp.status !== 404) {
+        const errText = await resp.text();
+        throw new Error(`Firestore delete failed (${resp.status}): ${errText}`);
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /*  RTDB REST HELPERS                                                  */
 /* ------------------------------------------------------------------ */
 async function rtdbPush(path, data, userToken) {
@@ -208,6 +223,106 @@ async function rtdbGetWithAccessToken(path, env, accessToken) {
         throw new Error(`RTDB get with access token failed (${resp.status}): ${errText}`);
     }
     return await resp.json();
+}
+
+async function rtdbDeleteWithAccessToken(path, accessToken) {
+    const url = `https://rekindle-socials-default-rtdb.firebaseio.com/${path}.json?access_token=${encodeURIComponent(accessToken)}`;
+    const resp = await fetch(url, { method: "DELETE" });
+    if (!resp.ok && resp.status !== 404) {
+        const errText = await resp.text();
+        throw new Error(`RTDB delete failed (${resp.status}): ${errText}`);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  FIRESTORE QUERY HELPERS                                            */
+/* ------------------------------------------------------------------ */
+async function getExistingPendingReport(contentType, contentId, accessToken) {
+    try {
+        const url = `https://firestore.googleapis.com/v1/projects/rekindle-socials/databases/(default)/documents:runQuery`;
+        const resp = await fetch(url, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${accessToken}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                structuredQuery: {
+                    from: [{ collectionId: "reports" }],
+                    where: {
+                        compositeFilter: {
+                            op: "AND",
+                            filters: [
+                                { fieldFilter: { field: { fieldPath: "contentType" }, op: "EQUAL", value: { stringValue: contentType } } },
+                                { fieldFilter: { field: { fieldPath: "contentId" }, op: "EQUAL", value: { stringValue: contentId } } },
+                                { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "pending" } } }
+                            ]
+                        }
+                    },
+                    orderBy: [{ field: { fieldPath: "createdAt" }, direction: "DESCENDING" }],
+                    limit: 1
+                }
+            })
+        });
+        if (!resp.ok) {
+            console.error("[REPORT] Failed to query existing reports:", resp.status);
+            return null;
+        }
+        const data = await resp.json();
+        if (Array.isArray(data) && data.length > 0 && data[0].document) {
+            const doc = data[0].document;
+            const fields = doc.fields || {};
+            return {
+                reportId: doc.name.split("/").pop(),
+                reporterId: fields.reporterId?.stringValue || "",
+                reporterName: fields.reporterName?.stringValue || ""
+            };
+        }
+        return null;
+    } catch (e) {
+        console.error("[REPORT] Error querying existing reports:", e.message);
+        return null;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  CONTENT DELETION                                                   */
+/* ------------------------------------------------------------------ */
+async function autoDeleteContent(contentType, contentId, contentPath, accessToken) {
+    try {
+        if (contentType === "kindlechat") {
+            await rtdbDeleteWithAccessToken(`kindlechat/messages/${contentId}`, accessToken);
+            console.log(`[AUTO-DELETE] Deleted kindlechat message ${contentId}`);
+            return true;
+        }
+        if (contentType === "topic") {
+            // Delete topic and all comments
+            await firestoreDelete(`topics/${contentId}`, accessToken);
+            console.log(`[AUTO-DELETE] Deleted topic ${contentId}`);
+            return true;
+        }
+        if (contentType === "topic_comment") {
+            // contentPath is like "topics/{topicId}/comments/{commentId}"
+            await firestoreDelete(contentPath, accessToken);
+            console.log(`[AUTO-DELETE] Deleted topic comment ${contentId}`);
+            return true;
+        }
+        if (contentType === "neighbourhood_post") {
+            await firestoreDelete(`neighbourhood_posts/${contentId}`, accessToken);
+            console.log(`[AUTO-DELETE] Deleted neighbourhood post ${contentId}`);
+            return true;
+        }
+        if (contentType === "neighbourhood_comment") {
+            // contentPath is like "neighbourhood_posts/{postId}/comments/{commentId}"
+            await firestoreDelete(contentPath, accessToken);
+            console.log(`[AUTO-DELETE] Deleted neighbourhood comment ${contentId}`);
+            return true;
+        }
+        return false;
+    } catch (e) {
+        console.error(`[AUTO-DELETE] Failed to delete ${contentType}/${contentId}:`, e.message);
+        return false;
+    }
 }
 
 function containsUrl(text) {
@@ -789,32 +904,201 @@ async function sendDiscordReportNotification(env, reportData) {
         ? reportData.contentSnapshot.substring(0, 500).replace(/```/g, "` ` `") + (reportData.contentSnapshot.length > 500 ? "..." : "")
         : "No preview available";
     
+    const isAutoDeleted = reportData.autoDeleted === true;
+    const title = isAutoDeleted 
+        ? (reportData.deleteSuccess ? "AUTO-DELETED: Content Removed" : "AUTO-DELETE FAILED")
+        : "New Content Report";
+    const color = isAutoDeleted 
+        ? (reportData.deleteSuccess ? 3066993 : 15158332) // Green if deleted, orange if failed
+        : 15158332;
+    
+    const fields = [
+        { name: "Reporter", value: `${reportData.reporterName} (${reportData.reporterId})`, inline: true },
+        { name: "Reported User", value: `${reportData.reportedUserName || "Unknown"} (${reportData.reportedUserId})`, inline: true },
+        { name: "Content Type", value: reportData.contentType, inline: true },
+        { name: "Reason", value: reportData.reason, inline: true }
+    ];
+    
+    if (isAutoDeleted) {
+        fields.push({ name: "Auto-Delete", value: reportData.deleteSuccess ? "Content was automatically deleted after 2 reports" : "Auto-delete failed, manual action required", inline: false });
+    }
+    
+    fields.push(
+        { name: "Content ID", value: reportData.contentId, inline: false },
+        { name: "Content Path", value: reportData.contentPath, inline: false },
+        { name: "Comment", value: reportData.comment || "None", inline: false },
+        { name: "Content Preview", value: "```\n" + truncatedSnapshot + "\n```", inline: false }
+    );
+    
     const embed = {
-        title: "New Content Report",
-        color: 15158332,
-        fields: [
-            { name: "Reporter", value: `${reportData.reporterName} (${reportData.reporterId})`, inline: true },
-            { name: "Reported User", value: `${reportData.reportedUserName || "Unknown"} (${reportData.reportedUserId})`, inline: true },
-            { name: "Content Type", value: reportData.contentType, inline: true },
-            { name: "Reason", value: reportData.reason, inline: true },
-            { name: "Content ID", value: reportData.contentId, inline: false },
-            { name: "Content Path", value: reportData.contentPath, inline: false },
-            { name: "Comment", value: reportData.comment || "None", inline: false },
-            { name: "Content Preview", value: "```\n" + truncatedSnapshot + "\n```", inline: false }
-        ],
+        title,
+        color,
+        fields,
         timestamp: new Date().toISOString(),
         footer: { text: "ReKindle Moderation" }
     };
     
+    // Build action row with buttons (only for non-auto-deleted content)
+    const components = [];
+    if (!isAutoDeleted) {
+        const actionId = `${reportData.contentType}:${reportData.contentId}:${reportData.reportedUserId || ""}`;
+        components.push({
+            type: 1, // Action Row
+            components: [
+                {
+                    type: 2, // Button
+                    style: 4, // Danger (red)
+                    label: "Delete Content",
+                    custom_id: `delete:${actionId}`,
+                    emoji: { name: "🗑️" }
+                },
+                {
+                    type: 2,
+                    style: 3, // Success (green)
+                    label: "Timeout User (24h)",
+                    custom_id: `timeout:${actionId}`,
+                    emoji: { name: "⏰" }
+                },
+                {
+                    type: 2,
+                    style: 2, // Secondary (grey)
+                    label: "Dismiss Report",
+                    custom_id: `dismiss:${actionId}`,
+                    emoji: { name: "✅" }
+                }
+            ]
+        });
+    }
+    
     try {
+        const payload = { embeds: [embed] };
+        if (components.length > 0) {
+            payload.components = components;
+        }
         await fetch(webhookUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ embeds: [embed] })
+            body: JSON.stringify(payload)
         });
     } catch (e) {
         console.error("[REPORT] Discord notification failed:", e.message);
     }
+}
+
+/* ------------------------------------------------------------------ */
+/*  DISCORD INTERACTIONS                                               */
+/* ------------------------------------------------------------------ */
+async function verifyDiscordSignature(request, publicKey) {
+    const signature = request.headers.get("X-Signature-Ed25519");
+    const timestamp = request.headers.get("X-Signature-Timestamp");
+    if (!signature || !timestamp || !publicKey) return false;
+
+    const body = await request.clone().text();
+    const message = new TextEncoder().encode(timestamp + body);
+
+    try {
+        const key = await crypto.subtle.importKey(
+            "raw",
+            hexToUint8Array(publicKey),
+            { name: "Ed25519" },
+            false,
+            ["verify"]
+        );
+        return await crypto.subtle.verify("Ed25519", key, hexToUint8Array(signature), message);
+    } catch (e) {
+        console.error("[DISCORD] Signature verification failed:", e.message);
+        return false;
+    }
+}
+
+function hexToUint8Array(hex) {
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) {
+        bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+    }
+    return bytes;
+}
+
+async function handleDiscordInteraction(request, env) {
+    const publicKey = env.DISCORD_PUBLIC_KEY;
+    if (!publicKey) {
+        return new Response(JSON.stringify({ error: "DISCORD_PUBLIC_KEY not configured" }), { status: 500 });
+    }
+
+    const isValid = await verifyDiscordSignature(request, publicKey);
+    if (!isValid) {
+        return new Response(JSON.stringify({ error: "Invalid signature" }), { status: 401 });
+    }
+
+    const body = await request.json();
+
+    // Handle PING (Discord verification)
+    if (body.type === 1) {
+        return new Response(JSON.stringify({ type: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    // Handle button clicks
+    if (body.type === 3 && body.data?.component_type === 2) {
+        const customId = body.data.custom_id;
+        const [action, contentType, contentId, reportedUserId] = customId.split(":");
+        const accessToken = await getCachedAccessToken(env);
+
+        let message = "";
+        let success = false;
+
+        try {
+            if (action === "delete") {
+                const contentPath = getContentPath(contentType, contentId);
+                const deleted = await autoDeleteContent(contentType, contentId, contentPath, accessToken);
+                if (deleted) {
+                    message = "Content deleted successfully.";
+                    success = true;
+                } else {
+                    message = "Failed to delete content. It may have already been removed.";
+                }
+            } else if (action === "timeout") {
+                if (reportedUserId) {
+                    const until = Date.now() + (24 * 3600000);
+                    await rtdbPushWithAccessToken(`timeouts/${reportedUserId}`, {
+                        until,
+                        reason: "Discord moderation action",
+                        moderatorUid: "discord",
+                        moderatorName: "Discord",
+                        createdAt: Date.now()
+                    }, accessToken);
+                    message = `User timed out for 24 hours.`;
+                    success = true;
+                } else {
+                    message = "No user ID available for timeout.";
+                }
+            } else if (action === "dismiss") {
+                message = "Report dismissed.";
+                success = true;
+            }
+        } catch (e) {
+            message = `Action failed: ${e.message}`;
+            console.error("[DISCORD] Action failed:", e);
+        }
+
+        return new Response(JSON.stringify({
+            type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
+            data: {
+                content: success ? `✅ ${message}` : `❌ ${message}`,
+                flags: 64 // EPHEMERAL
+            }
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    return new Response(JSON.stringify({ error: "Unknown interaction type" }), { status: 400 });
+}
+
+function getContentPath(contentType, contentId) {
+    if (contentType === "kindlechat") return `kindlechat/messages/${contentId}`;
+    if (contentType === "topic") return `topics/${contentId}`;
+    if (contentType === "topic_comment") return `topics/${contentId}`;
+    if (contentType === "neighbourhood_post") return `neighbourhood_posts/${contentId}`;
+    if (contentType === "neighbourhood_comment") return `neighbourhood_posts/${contentId}`;
+    return "";
 }
 
 /* ------------------------------------------------------------------ */
@@ -825,6 +1109,11 @@ export default {
         const origin = request.headers.get("Origin");
         const headers = corsHeaders(origin);
         const url = new URL(request.url);
+
+        // --- DISCORD INTERACTIONS ENDPOINT ---
+        if (request.method === "POST" && url.pathname === "/discord-interaction") {
+            return handleDiscordInteraction(request, env);
+        }
 
         // --- HEALTH / DIAGNOSTICS ENDPOINT ---
         if (request.method === "GET" && url.pathname === "/health") {
@@ -1219,6 +1508,10 @@ export default {
                     return new Response(JSON.stringify({ error: "Rate limit exceeded. You can submit up to 5 reports per hour." }), { status: 429, headers });
                 }
                 
+                // Check if another user already reported this content
+                const existingReport = await getExistingPendingReport(contentType, contentId, accessToken);
+                const isSecondReport = existingReport && existingReport.reporterId !== uid;
+                
                 // Create report in Firestore
                 const reportData = {
                     reporterId: uid,
@@ -1231,17 +1524,42 @@ export default {
                     reason,
                     comment: (comment || "").substring(0, 500),
                     contentSnapshot: (contentSnapshot || "").substring(0, 2000),
-                    status: "pending",
+                    status: isSecondReport ? "resolved" : "pending",
                     createdAt: new Date(),
-                    resolvedAt: null,
-                    resolvedBy: "",
-                    resolutionNote: ""
+                    resolvedAt: isSecondReport ? new Date() : null,
+                    resolvedBy: isSecondReport ? "system" : "",
+                    resolutionNote: isSecondReport ? "Auto-deleted after 2 reports" : ""
                 };
                 
                 const reportId = await firestoreCreate("reports", reportData, accessToken);
                 
-                // Send Discord notification
-                await sendDiscordReportNotification(env, reportData);
+                // If second report from different user, auto-delete content
+                if (isSecondReport) {
+                    console.log(`[REPORT] Second report on ${contentType}/${contentId}. Auto-deleting...`);
+                    const deleted = await autoDeleteContent(contentType, contentId, contentPath, accessToken);
+                    
+                    // Update original report to resolved too
+                    try {
+                        await firestorePatch(`reports/${existingReport.reportId}`, {
+                            status: "resolved",
+                            resolvedAt: new Date(),
+                            resolvedBy: "system",
+                            resolutionNote: "Auto-deleted after 2 reports"
+                        }, accessToken);
+                    } catch (e) {
+                        console.error("[REPORT] Failed to update original report:", e.message);
+                    }
+                    
+                    // Send Discord notification about auto-deletion
+                    await sendDiscordReportNotification(env, {
+                        ...reportData,
+                        autoDeleted: true,
+                        deleteSuccess: deleted
+                    });
+                } else {
+                    // Send normal Discord notification for first report
+                    await sendDiscordReportNotification(env, reportData);
+                }
                 
                 return new Response(JSON.stringify({ success: true, id: reportId }), { status: 200, headers });
             }

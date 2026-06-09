@@ -411,7 +411,7 @@ Users can report content across all social apps. Reports are stored in Firestore
 - **Client Module:** `js/reports.js` — provides `rekindleOpenReportModal()` with System 7 styling
 - **Backend Handler:** `workers/rekindle-moderate/worker.js` handles `type: "report"` requests
 - **Storage:** Firestore `reports` collection (social project: `rekindle-socials`)
-- **Notifications:** Discord webhook via `DISCORD_WEBHOOK_URL` environment variable. Fires on every report submission.
+- **Notifications:** Discord webhook via `DISCORD_WEBHOOK_URL` environment variable. Fires on every report submission. Includes action buttons (Delete, Timeout, Dismiss) for manual moderation.
 
 ### Data Model (`reports` collection)
 ```javascript
@@ -444,11 +444,28 @@ Users can report content across all social apps. Reports are stored in Firestore
 ### Discord Webhook
 Set `DISCORD_WEBHOOK_URL` as a Cloudflare Worker environment variable. **No fallback** — if not set, notifications are silently skipped. Never commit the webhook URL to the repository — use environment variables.
 
-### Firestore Index Required
-The moderation dashboard requires a composite index. Create it in the Firebase Console:
+**Auto-Deletion:** When 2 different users report the same content (same `contentType` + `contentId`), the content is automatically deleted and both reports are marked as "resolved". The Discord notification will show a green embed indicating the auto-deletion.
 
-- **Collection:** `reports`
-- **Fields:** `status` (Ascending), `createdAt` (Descending)
+**Discord Action Buttons:** Each Discord notification includes 3 buttons:
+- **Delete Content** — Manually deletes the reported content
+- **Timeout User (24h)** — Applies a 24-hour timeout to the reported user
+- **Dismiss Report** — Marks the report as resolved without action
+
+To enable buttons, you must set up Discord Interactions:
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications) → Your Application
+2. Go to "General Information" → Set "Interactions Endpoint URL" to: `https://rekindle-moderate.timjarnott.workers.dev/discord-interaction`
+3. Set `DISCORD_PUBLIC_KEY` as a Cloudflare Worker environment variable (found in Discord Developer Portal under "General Information")
+
+### Firestore Indexes Required
+The moderation dashboard and auto-deletion both require composite indexes. Create these in the Firebase Console:
+
+1. **Dashboard queries:**
+   - **Collection:** `reports`
+   - **Fields:** `status` (Ascending), `createdAt` (Descending)
+
+2. **Auto-deletion (worker checks for existing reports):**
+   - **Collection:** `reports`
+   - **Fields:** `contentType` (Ascending), `contentId` (Ascending), `status` (Ascending), `createdAt` (Descending)
 
 ### Security: Escaping for JS String Literals
 When passing user-generated text into `onclick` HTML attributes, **never rely solely on `escapeHtml()`**. HTML entity decoding happens before JS execution, so `&#039;` becomes `'` and breaks out of the string literal.
