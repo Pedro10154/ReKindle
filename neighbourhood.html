@@ -3222,10 +3222,7 @@
             const text = input.value.trim();
 
             if (!text) return;
-            // CHECK 1: Min Word Count
-            const wordCount = text.trim().split(/\s+/).length;
-            if (wordCount < 10) return showAlertModal("Keep it meaningful! Minimum 10 words.");
-            // CHECK 2: Max Length
+            // CHECK 1: Max Length
             if (text.length > 280) { showAlertModal("Message too long (max 280 chars)."); return; }
             // CHECK 2b: No URLs
             if (containsUrl(text)) { showAlertModal("Links and URLs are not allowed."); return; }
