@@ -429,6 +429,50 @@ The OpenAI `omni-moderation-latest` model incorrectly flags innocent ASCII art e
 
 **If you add new emojis to `emojis.js`, you must also add their `art` strings to the `ASCII_EMOJI_ARTS` array in `worker.js`.**
 
+### 11. RTDB Turn Timers and `ServerValue.TIMESTAMP` Placeholders
+When building turn-based multiplayer games with RTDB, store `turnStartedAt` using `firebase.database.ServerValue.TIMESTAMP` so all clients share the same clock.
+
+**Gotcha:** After a local write, the RTDB value listener may fire before the server resolves the timestamp. The local snapshot then contains the sentinel object `{ '.sv': 'timestamp' }` (or an estimated value), not a number. Computing `Date.now() - turnStartedAt` against this placeholder produces `NaN`, which causes `setTimeout(..., NaN)` to fire immediately or with a browser-default delay.
+
+**Solution:** Guard timer scheduling until the timestamp is a real number:
+
+```javascript
+const turnStartedAt = gameState.turnStartedAt;
+if (typeof turnStartedAt !== 'number') return; // Wait for server confirmation
+
+const elapsed = Date.now() - turnStartedAt;
+const remaining = Math.max(1000, AFK_TIMEOUT_MS - elapsed);
+afkTimer = setTimeout(performAfkAction, remaining);
+```
+
+This pattern is used in `liveuno.html` for the 30-second AFK auto-skip timer.
+
+### 12. Host Migration in RTDB Multiplayer Games
+Do **not** remove the entire game node when the host disconnects. A brief network hiccup would destroy the match and kick every player out.
+
+**Pattern:**
+1. Set `matchmaking/{game}/{matchId}.onDisconnect().remove()` only for the public listing.
+2. Do **not** set `games/{game}/{matchId}.onDisconnect().remove()`.
+3. In the `matchRef.on('value')` listener, detect when `gameState.host` no longer exists in `gameState.players`. If so, promote the oldest remaining human player to host and update both the game node and the matchmaking listing:
+
+```javascript
+if (!gameState.players[gameState.host]) {
+    const humans = Object.entries(gameState.players || {})
+        .filter(([uid, p]) => !p.isBot)
+        .sort((a, b) => a[1].joinedAt - b[1].joinedAt);
+    if (humans.length > 0 && humans[0][0] === currentUser.uid) {
+        const newHost = humans[0][0];
+        matchRef.update({ host: newHost });
+        rtdb.ref(`matchmaking/{game}/${matchId}`).update({
+            hostUid: newHost,
+            hostName: gameState.players[newHost].name
+        });
+    }
+}
+```
+
+This keeps the game alive if the host leaves or drops, and lets remaining players finish the match. It is implemented in `liveuno.html`.
+
 ## ✅ Best Practices
 -   **Images:** Use **WebP** or **SVG**. They are fully supported and perform best.
 -   **Modals:** Always stick to the `.modal-overlay` / `.modal-box` DOM structure found in `weather.html`.
@@ -543,3 +587,16 @@ var safeText = userText
     .replace(/\u003e/g, '\u0026gt;')
     .replace(/"/g, '\u0026quot;');
 ```
+
+### Guarding Optional Firebase / CDN Dependencies
+If an app can function without Firebase (e.g., local-only games), wrap Firebase initialization and all `auth`/`db` usage in feature checks. A blocked or failed CDN script must not prevent the rest of the page script from running. Use `typeof firebase !== 'undefined' && typeof firebase.auth === 'function' && typeof firebase.firestore === 'function'` before initializing, and guard every `db.collection(...)` / `auth.onAuthStateChanged(...)` call. See `nonograms.html` for the pattern used in this codebase.
+
+## 🏉 NRL Scores (scores.html)
+
+ESPN's JSON scoreboard API (`site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard`) supports NFL/NBA/MLB/NHL/soccer/AFL but **does not expose NRL**. To add NRL, `scores.html` uses a dedicated Cloudflare Pages Function at `functions/api/nrl-scores.js` that scrapes `https://www.espn.com/nrl/scoreboard` and returns ESPN-compatible JSON.
+
+*   The scraper is regex-based and relies on ESPN's current server-rendered HTML structure. If ESPN changes their markup, the parser will return empty events.
+*   Only games where both teams are in the known NRL team list are returned (filters out State of Origin / Tests).
+*   The response is cached for 2 minutes via `caches.default`, but only when games are successfully parsed.
+*   In `scores.html`, NRL is added to `LEAGUES` with `source: "nrl-scores"`, and `fetchFromAPI()` routes it to `/api/nrl-scores` instead of the ESPN proxy.
+

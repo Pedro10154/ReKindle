@@ -360,7 +360,12 @@
 
         <div class="window-content" id="screen-menu">
             <h1 style="font-size: 3rem; margin: 10px 0;">UNO</h1>
-            <p>Up to 10 players.</p>
+            <p style="text-align:center;">Up to 10 players. Play with friends or add bots.</p>
+            <div style="display:flex; flex-wrap:wrap; justify-content:center;">
+                <button class="sys-btn" onclick="cycleTotalPlayers()" id="menu-total-btn" style="width:200px;">Players: 4</button>
+                <button class="sys-btn" onclick="cycleBots()" id="menu-bots-btn" style="width:200px;">Bots: 0</button>
+                <button class="sys-btn" onclick="cycleStacking()" id="menu-stack-btn" style="width:200px;">Stacking: Off</button>
+            </div>
             <button class="sys-btn" onclick="hostGame()">Host Game</button>
             <button class="sys-btn" onclick="goHome()">Back</button>
         </div>
@@ -374,9 +379,16 @@
             <div style="font-size: 1.2rem; margin-bottom: 10px;" id="lobby-status">Waiting for players...</div>
             <div class="player-list" id="lobby-players"></div>
             
-            <div id="host-controls" style="display:none; flex-direction: column; align-items: center;">
-                <p style="font-size: 0.9rem; margin-bottom: 0;">Game starts automatically 30s after someone joins.</p>
-                <button class="sys-btn" id="btn-force-start" onclick="forceStartGame()">Force Start Now</button>
+            <div id="host-controls" style="display:none; flex-direction: column; align-items: center; width:100%;">
+                <div style="font-size:0.85rem; margin-bottom:4px;">Share this link:</div>
+                <div class="copy-link" id="invite-link" style="width:100%; max-width:400px; border:2px solid black; padding:6px 8px; font-family:'Courier New', monospace; font-size:0.85rem; background:white; word-break:break-all; margin:8px 0; box-sizing:border-box;"></div>
+                <div style="display:flex; flex-wrap:wrap; justify-content:center;">
+                    <button class="sys-btn" onclick="cycleTotalPlayersLobby()" id="lobby-total-btn" style="width:180px;">Players: 4</button>
+                    <button class="sys-btn" onclick="cycleBotsLobby()" id="lobby-bots-btn" style="width:180px;">Bots: 0</button>
+                    <button class="sys-btn" onclick="cycleStackingLobby()" id="lobby-stack-btn" style="width:180px;">Stacking: Off</button>
+                </div>
+                <p style="font-size: 0.85rem; margin: 5px 0; text-align:center;">Host starts the game manually.</p>
+                <button class="sys-btn" id="btn-force-start" onclick="forceStartGame()">Start Game</button>
             </div>
             <button class="sys-btn" onclick="leaveMatch()">Leave Lobby</button>
         </div>
@@ -467,12 +479,20 @@
         let currentUser = null;
         let matchId = null;
         let isHost = false;
-        let playerRef = null;
         let matchRef = null;
         let gameState = null;
         let myTurn = false;
         
         let pendingPlayCard = null; // Store card played before color picked
+        
+        let localTotalPlayers = 4;
+        let localBots = 0;
+        let localStacking = false;
+        
+        let botTimer = null;
+        let afkTimer = null;
+        const BOT_DELAY_MS = 1500;
+        const AFK_TIMEOUT_MS = 30000;
         
         function goHome() {
             window.location.href = 'index.html';
@@ -521,10 +541,49 @@
             document.getElementById('screen-loading').style.display = 'none';
             document.getElementById('screen-game').style.display = 'none';
             document.getElementById('screen-' + screen).style.display = 'flex';
+            if (screen === 'menu') updateMenuSettingsUI();
         }
         
         function generateId() {
             return Math.random().toString(36).substr(2, 9);
+        }
+
+        function updateMenuSettingsUI() {
+            document.getElementById('menu-total-btn').innerText = 'Players: ' + localTotalPlayers;
+            document.getElementById('menu-bots-btn').innerText = 'Bots: ' + localBots;
+            document.getElementById('menu-stack-btn').innerText = 'Stacking: ' + (localStacking ? 'On' : 'Off');
+        }
+
+        function cycleTotalPlayers() {
+            localTotalPlayers = localTotalPlayers >= 10 ? 2 : localTotalPlayers + 1;
+            updateMenuSettingsUI();
+        }
+        function cycleBots() {
+            localBots = localBots >= localTotalPlayers - 1 ? 0 : localBots + 1;
+            updateMenuSettingsUI();
+        }
+        function cycleStacking() {
+            localStacking = !localStacking;
+            updateMenuSettingsUI();
+        }
+
+        function cycleTotalPlayersLobby() {
+            if (!isHost || !gameState) return;
+            const settings = gameState.settings || {};
+            const next = settings.totalPlayers >= 10 ? 2 : (settings.totalPlayers || 4) + 1;
+            matchRef.child('settings').update({ totalPlayers: next });
+        }
+        function cycleBotsLobby() {
+            if (!isHost || !gameState) return;
+            const settings = gameState.settings || {};
+            const total = settings.totalPlayers || 4;
+            const next = settings.bots >= total - 1 ? 0 : (settings.bots || 0) + 1;
+            matchRef.child('settings').update({ bots: next });
+        }
+        function cycleStackingLobby() {
+            if (!isHost || !gameState) return;
+            const settings = gameState.settings || {};
+            matchRef.child('settings').update({ stacking: !settings.stacking });
         }
 
         // ====== MATCHMAKING ======
@@ -544,24 +603,29 @@
                 createdAt: firebase.database.ServerValue.TIMESTAMP
             });
             
-            
             matchRef = rtdb.ref(`games/uno/${matchId}`);
             const initialGame = {
                 status: 'lobby',
                 host: currentUser.uid,
                 players: {},
+                settings: {
+                    totalPlayers: localTotalPlayers,
+                    bots: localBots,
+                    stacking: localStacking
+                },
                 countdown: 0
             };
-            initialGame.players[currentUser.uid] = { name: currentUser.name, joinedAt: Date.now() };
+            initialGame.players[currentUser.uid] = { name: currentUser.name, joinedAt: Date.now(), isHost: true };
             
-            // Clean up lobby if host disconnects
+            // Clean up lobby listing if host disconnects, but keep the game so others can continue
             mmRef.onDisconnect().remove();
-            matchRef.onDisconnect().remove();
+            // Do NOT remove matchRef on disconnect — host migration keeps the game alive.
             
             await matchRef.set(initialGame);
             listenToMatch();
             showScreen('lobby');
             document.getElementById('host-controls').style.display = 'flex';
+            document.getElementById('invite-link').innerText = window.location.origin + window.location.pathname + '?matchId=' + matchId;
         }
         
         async function joinMatch(mId) {
@@ -578,6 +642,9 @@
             }
             
             const state = snap.val();
+            // Rejoining host gets host back
+            if (state.host === currentUser.uid) isHost = true;
+            
             if (state.status === 'playing' && !state.players[currentUser.uid]) {
                 showAlert("Error", "Game already started!");
                 goHome();
@@ -590,11 +657,20 @@
                 return;
             }
             
-            // Add self to players
-            await matchRef.child('players').child(currentUser.uid).set({
-                name: currentUser.name,
-                joinedAt: Date.now()
-            });
+            // Add self to players (preserve joinedAt on rejoin)
+            if (!state.players[currentUser.uid]) {
+                await matchRef.child('players').child(currentUser.uid).set({
+                    name: currentUser.name,
+                    joinedAt: Date.now(),
+                    isHost: isHost
+                });
+            } else {
+                const existing = state.players[currentUser.uid];
+                await matchRef.child('players').child(currentUser.uid).update({
+                    name: currentUser.name,
+                    isHost: isHost || existing.isHost || false
+                });
+            }
             
             // Update matchmaking count
             const mmRef = rtdb.ref(`matchmaking/uno/${matchId}`);
@@ -609,68 +685,98 @@
         }
         
         function leaveMatch() {
-            if (matchRef && currentUser) {
-                // If host leaves in lobby, destroy game
-                if (isHost && gameState && gameState.status === 'lobby') {
-                    rtdb.ref(`matchmaking/uno/${matchId}`).remove();
-                    matchRef.remove();
-                } else {
-                    matchRef.child('players').child(currentUser.uid).remove();
+            if (matchRef && currentUser && gameState) {
+                const isPlaying = gameState.status === 'playing';
+                const updates = {};
+                updates['players/' + currentUser.uid] = null;
+                updates['hands/' + currentUser.uid] = null;
+                
+                if (isPlaying) {
+                    const playerOrder = gameState.playerOrder || [];
+                    const idx = playerOrder.indexOf(currentUser.uid);
+                    if (idx !== -1) {
+                        const newOrder = playerOrder.slice();
+                        newOrder.splice(idx, 1);
+                        if (newOrder.length === 0) {
+                            matchRef.remove();
+                            rtdb.ref(`matchmaking/uno/${matchId}`).onDisconnect().cancel();
+                            matchRef.onDisconnect().cancel();
+                            window.location.href = 'index.html';
+                            return;
+                        }
+                        updates['playerOrder'] = newOrder;
+                        
+                        let turnIndex = gameState.turnIndex || 0;
+                        if (idx < turnIndex) turnIndex--;
+                        updates['turnIndex'] = turnIndex % newOrder.length;
+                        updates['turnStartedAt'] = firebase.database.ServerValue.TIMESTAMP;
+                    }
                 }
                 
-                // Cancel any pending onDisconnect actions
+                // In lobby, if no humans would remain, destroy the lobby
+                if (gameState.status === 'lobby') {
+                    const remainingHumans = Object.entries(gameState.players || {})
+                        .filter(([uid, p]) => uid !== currentUser.uid && !p.isBot);
+                    if (remainingHumans.length === 0) {
+                        rtdb.ref(`matchmaking/uno/${matchId}`).remove();
+                        matchRef.remove();
+                        rtdb.ref(`matchmaking/uno/${matchId}`).onDisconnect().cancel();
+                        matchRef.onDisconnect().cancel();
+                        window.location.href = 'index.html';
+                        return;
+                    }
+                }
+                
+                matchRef.update(updates);
                 rtdb.ref(`matchmaking/uno/${matchId}`).onDisconnect().cancel();
                 matchRef.onDisconnect().cancel();
             }
             window.location.href = 'index.html';
         }
         
-        let countdownTimer = null;
         function updateLobbyUI() {
             const players = Object.entries(gameState.players || {}).map(([uid, p]) => ({ uid, ...p })).sort((a,b) => a.joinedAt - b.joinedAt);
             const listDiv = document.getElementById('lobby-players');
             
             listDiv.innerHTML = players.map(p => `
-                <div style="display:flex; align-items:center; font-weight:bold; font-size:1.1rem;">
+                <div style="display:flex; align-items:center; font-weight:bold; font-size:1.1rem; border-bottom:1px solid #eee; padding:5px 0;">
                     <canvas id="avatar-${p.uid}" width="32" height="32" style="border:2px solid black; width:32px; height:32px; image-rendering:-webkit-optimize-contrast; image-rendering:crisp-edges; image-rendering:pixelated;"></canvas>
-                    <span style="margin-left:10px;">${p.name}</span>
+                    <span style="margin-left:10px;">${p.isBot ? '(bot) ' : ''}${p.name}${p.uid === gameState.host ? ' (host)' : ''}</span>
                 </div>
             `).join('');
             
             // Draw avatars
             setTimeout(() => {
                 players.forEach(p => {
-                    window.rekindleFetchAvatarSeed(rtdb, p.uid, seed => {
-                        drawAvatar(`avatar-${p.uid}`, seed);
-                    });
+                    if (p.isBot) {
+                        drawAvatar(`avatar-${p.uid}`, p.uid);
+                    } else {
+                        window.rekindleFetchAvatarSeed(rtdb, p.uid, seed => {
+                            drawAvatar(`avatar-${p.uid}`, seed);
+                        });
+                    }
                 });
             }, 0);
             
-            const statusDiv = document.getElementById('lobby-status');
+            // Sync local settings with lobby state
+            const settings = gameState.settings || {};
+            localTotalPlayers = settings.totalPlayers || 4;
+            localBots = settings.bots || 0;
+            localStacking = !!settings.stacking;
             
-            if (gameState.countdown > 0) {
-                const secondsLeft = Math.max(0, Math.ceil((gameState.countdown - Date.now()) / 1000));
-                statusDiv.innerText = `Starting in ${secondsLeft}s...`;
-                if (!countdownTimer) {
-                    countdownTimer = setInterval(() => {
-                        const s = Math.max(0, Math.ceil((gameState.countdown - Date.now()) / 1000));
-                        document.getElementById('lobby-status').innerText = `Starting in ${s}s...`;
-                        if (s <= 0 && isHost) {
-                            clearInterval(countdownTimer);
-                            countdownTimer = null;
-                            startGame();
-                        }
-                    }, 1000);
-                }
+            document.getElementById('lobby-total-btn').innerText = 'Players: ' + localTotalPlayers;
+            document.getElementById('lobby-bots-btn').innerText = 'Bots: ' + localBots;
+            document.getElementById('lobby-stack-btn').innerText = 'Stacking: ' + (localStacking ? 'On' : 'Off');
+            
+            const humanCount = players.filter(p => !p.isBot).length;
+            const botCount = players.filter(p => p.isBot).length;
+            document.getElementById('lobby-status').innerText = `Waiting... (${humanCount} human${humanCount !== 1 ? 's' : ''}, ${botCount} bot${botCount !== 1 ? 's' : ''})`;
+            
+            if (isHost) {
+                document.getElementById('host-controls').style.display = 'flex';
+                document.getElementById('invite-link').innerText = window.location.origin + window.location.pathname + '?matchId=' + matchId;
             } else {
-                statusDiv.innerText = `Waiting for players... (${players.length}/10)`;
-                if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
-                
-                // Host logic to start countdown when players >= 2
-                if (isHost && players.length >= 2 && gameState.countdown === 0) {
-                    // Start 30s countdown
-                    matchRef.update({ countdown: Date.now() + 30000 });
-                }
+                document.getElementById('host-controls').style.display = 'none';
             }
         }
         
@@ -724,12 +830,21 @@
         }
         
         function forceStartGame() {
-            if (isHost && Object.keys(gameState.players || {}).length >= 2) {
-                if (countdownTimer) clearInterval(countdownTimer);
-                startGame();
-            } else {
-                showAlert("Host", "Need at least 2 players!");
+            if (!isHost) return;
+            const humanCount = Object.keys(gameState.players || {}).filter(uid => !uid.startsWith('bot_')).length;
+            const settings = gameState.settings || {};
+            const bots = settings.bots || 0;
+            const total = humanCount + bots;
+            
+            if (total < 2) {
+                showAlert("Need Players", "Need at least 2 total players.");
+                return;
             }
+            if (total > 10) {
+                showAlert("Too Many", "Max 10 players total.");
+                return;
+            }
+            startGame();
         }
 
         function listenToMatch() {
@@ -743,6 +858,24 @@
                 }
                 gameState = data;
                 
+                // Host migration: if current host is gone, oldest remaining human becomes host
+                const playerIds = Object.keys(gameState.players || {});
+                if (playerIds.length > 0 && !gameState.players[gameState.host]) {
+                    const humans = Object.entries(gameState.players || {})
+                        .filter(([uid, p]) => !p.isBot)
+                        .sort((a,b) => a[1].joinedAt - b[1].joinedAt);
+                    if (humans.length > 0) {
+                        const newHost = humans[0][0];
+                        if (newHost === currentUser.uid) {
+                            const hostName = gameState.players[newHost].name;
+                            matchRef.update({ host: newHost });
+                            rtdb.ref(`matchmaking/uno/${matchId}`).update({ hostUid: newHost, hostName: hostName });
+                        }
+                    }
+                }
+                
+                isHost = (gameState.host === currentUser.uid);
+                
                 if (gameState.status === 'lobby') {
                     if (document.getElementById('screen-lobby').style.display === 'none') {
                         showScreen('lobby');
@@ -753,10 +886,12 @@
                         showScreen('game');
                     }
                     updateGameUI();
+                    scheduleBotTurn();
+                    scheduleAfkSkip();
                 } else if (gameState.status === 'finished') {
                     document.getElementById('winner-modal').style.display = 'flex';
                     const winnerName = (gameState.players[gameState.winner] || {}).name || 'Someone';
-                    document.getElementById('winner-text').innerText = `${winnerName} Wins!`;
+                    document.getElementById('winner-text').innerText = winnerName + ' Wins!';
                 }
             });
         }
@@ -794,11 +929,35 @@
         async function startGame() {
             if (!isHost) return;
             
+            const humanPlayers = Object.entries(gameState.players || {})
+                .filter(([uid]) => !uid.startsWith('bot_'))
+                .sort((a,b) => a[1].joinedAt - b[1].joinedAt);
+            const humanIds = humanPlayers.map(([uid]) => uid);
+            
+            const settings = gameState.settings || {};
+            const totalPlayers = Math.min(10, Math.max(2, settings.totalPlayers || 4));
+            const desiredBots = Math.min(totalPlayers - 1, Math.max(0, settings.bots || 0));
+            const actualBots = Math.min(desiredBots, totalPlayers - humanIds.length);
+            
+            const botIds = [];
+            for (let i = 1; i <= actualBots; i++) botIds.push('bot_' + i);
+            
+            const playerOrder = humanIds.concat(botIds);
+            const players = Object.assign({}, gameState.players);
+            
+            botIds.forEach(botId => {
+                players[botId] = { name: 'Bot ' + botId.split('_')[1], joinedAt: Date.now() + botId.charCodeAt(0), isBot: true };
+            });
+            
+            // Remove stale bot entries if settings reduced bot count
+            Object.keys(players).forEach(uid => {
+                if (uid.startsWith('bot_') && !botIds.includes(uid)) delete players[uid];
+            });
+            
             const deck = generateDeck();
-            const playerIds = Object.keys(gameState.players).sort((a,b) => gameState.players[a].joinedAt - gameState.players[b].joinedAt);
             const hands = {};
             
-            playerIds.forEach(uid => {
+            playerOrder.forEach(uid => {
                 hands[uid] = deck.splice(0, 7);
             });
             
@@ -811,14 +970,16 @@
             
             await matchRef.update({
                 status: 'playing',
+                players: players,
                 deck: deck,
                 discard: [firstCard],
                 hands: hands,
-                playerOrder: playerIds,
+                playerOrder: playerOrder,
                 turnIndex: 0,
                 direction: 1,
                 currentColor: firstCard.color,
-                actionPending: false,
+                drawStack: 0,
+                turnStartedAt: firebase.database.ServerValue.TIMESTAMP,
                 countdown: null
             });
             
@@ -858,7 +1019,8 @@
             myTurn = (turnId === currentUser.uid);
             
             // Status bar
-            const turnName = turnId === currentUser.uid ? "Your Turn!" : `${escapeHtml(gameState.players[turnId].name)}'s Turn`;
+            const turnPlayer = gameState.players[turnId] || {};
+            const turnName = turnId === currentUser.uid ? "Your Turn!" : escapeHtml(turnPlayer.name) + "'s Turn";
             const turnStatusBar = document.getElementById('status-bar');
             turnStatusBar.innerHTML = `
                 <div class="status-bar-inner">
@@ -871,9 +1033,13 @@
             
             // Draw status avatar
             setTimeout(() => {
-                window.rekindleFetchAvatarSeed(rtdb, turnId, seed => {
-                    drawAvatar('status-avatar', seed);
-                });
+                if (turnPlayer.isBot) {
+                    drawAvatar('status-avatar', turnId);
+                } else {
+                    window.rekindleFetchAvatarSeed(rtdb, turnId, seed => {
+                        drawAvatar('status-avatar', seed);
+                    });
+                }
             }, 0);
             
             const discardPile = gameState.discard || [];
@@ -882,17 +1048,22 @@
             // Discard pile
             document.getElementById('discard-pile').innerHTML = renderCard(topCard);
             const patternNames = { red: 'Vertical', blue: 'Horizontal', green: 'Diag Up', yellow: 'Diag Down', wild: 'Wild' };
-            document.getElementById('current-color-label').innerText = `Discard (${patternNames[gameState.currentColor] || 'Any'})`;
+            document.getElementById('current-color-label').innerText = 'Discard (' + (patternNames[gameState.currentColor] || 'Any') + ')';
             document.getElementById('current-color-label').style.color = 'black';
+            
+            // Draw pile label with stack indicator
+            const drawStack = gameState.drawStack || 0;
+            document.querySelector('.board-center .pile-label').innerText = drawStack > 0 ? 'Draw (+' + drawStack + ')' : 'Draw';
             
             // My Hand
             const myCards = (gameState.hands || {})[currentUser.uid] || [];
             const handDiv = document.getElementById('my-hand');
             handDiv.innerHTML = '';
             
+            const settings = gameState.settings || {};
             myCards.forEach((card, index) => {
-                const canPlay = myTurn && isPlayable(card, topCard, gameState.currentColor, gameState.actionPending);
-                const clickFn = canPlay ? `tryPlayCard(${index})` : '';
+                const canPlay = myTurn && isPlayable(card, topCard, gameState.currentColor, drawStack, settings.stacking);
+                const clickFn = canPlay ? 'tryPlayCard(' + index + ')' : '';
                 handDiv.innerHTML += renderCard(card, clickFn);
                 // Make unplayable cards translucent if it's my turn
                 if (myTurn && !canPlay) {
@@ -907,10 +1078,11 @@
                 if (uid !== currentUser.uid) {
                     const count = ((gameState.hands || {})[uid] || []).length;
                     const isActive = (uid === turnId);
+                    const p = gameState.players[uid] || {};
                     oppDiv.innerHTML += `
                         <div class="opponent opponent-card ${isActive ? 'active-turn' : ''}" style="display:flex; flex-direction:column; align-items:center;">
                             <canvas id="game-avatar-${uid}" width="32" height="32" style="border:2px solid black; width:32px; height:32px; image-rendering:pixelated; background:white;"></canvas>
-                            <div>${isActive ? '▶ ' : ''}${escapeHtml(gameState.players[uid].name)}</div>
+                            <div>${isActive ? '▶ ' : ''}${escapeHtml(p.name)}</div>
                             <div style="font-size:0.8rem; font-weight:normal;">${count} cards</div>
                         </div>
                     `;
@@ -921,114 +1093,151 @@
             setTimeout(() => {
                 playerOrder.forEach(uid => {
                     if (uid !== currentUser.uid) {
-                        window.rekindleFetchAvatarSeed(rtdb, uid, seed => {
-                            drawAvatar(`game-avatar-${uid}`, seed);
-                        });
+                        const p = gameState.players[uid] || {};
+                        if (p.isBot) {
+                            drawAvatar(`game-avatar-${uid}`, uid);
+                        } else {
+                            window.rekindleFetchAvatarSeed(rtdb, uid, seed => {
+                                drawAvatar(`game-avatar-${uid}`, seed);
+                            });
+                        }
                     }
                 });
             }, 0);
-            
-            // Auto action processing for drawn cards (e.g., if someone played a +2 on me, I must draw it)
-            if (myTurn && gameState.actionPending) {
-                handlePendingAction(topCard);
-            }
         }
         
-        function isPlayable(card, topCard, currentColor, actionPending) {
-            if (actionPending) return false; // Must resolve action (drawing cards) before playing
+        function isPlayable(card, topCard, currentColor, drawStack, stackingEnabled) {
+            if (drawStack > 0) {
+                if (!stackingEnabled) return false;
+                // When stacking, only +2 or +4 can be played on top of an active stack
+                return (card.type === '+2' || card.type === '+4');
+            }
             if (card.color === 'wild') return true;
             if (card.color === currentColor) return true;
             if (card.type === topCard.type) return true;
             return false;
         }
 
-        async function drawCard() {
-            if (!myTurn || gameState.actionPending) return;
-            
-            let deck = gameState.deck || [];
-            if (deck.length === 0) {
-                // Reshuffle discard into deck
-                const discard = gameState.discard || [];
-                const top = discard.pop();
-                deck = discard.sort(() => Math.random() - 0.5);
-                gameState.discard = [top];
+        function ensureDeckHasCards(deck, discard, needed) {
+            deck = deck || [];
+            discard = discard || [];
+            if (deck.length >= needed) return { deck: deck, discard: discard };
+
+            const top = discard.pop();
+            const rest = discard.slice();
+            for (let i = rest.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const tmp = rest[i];
+                rest[i] = rest[j];
+                rest[j] = tmp;
             }
-            
-            if (deck.length > 0) {
-                const drawn = deck.pop();
-                const myCards = gameState.hands[currentUser.uid] || [];
-                myCards.push(drawn);
-                
-                const nextIdx = getNextTurnIndex(1);
-                
-                await matchRef.update({
-                    deck: deck,
-                    discard: gameState.discard,
-                    [`hands/${currentUser.uid}`]: myCards,
-                    turnIndex: nextIdx
-                });
+            deck = deck.concat(rest);
+            discard = top ? [top] : [];
+            return { deck: deck, discard: discard };
+        }
+
+        async function drawCards(playerId, count) {
+            let deck = gameState.deck || [];
+            let discard = gameState.discard || [];
+            const hand = (gameState.hands || {})[playerId] || [];
+
+            const ensured = ensureDeckHasCards(deck, discard, count);
+            deck = ensured.deck;
+            discard = ensured.discard;
+
+            for (let i = 0; i < count; i++) {
+                if (deck.length === 0) break;
+                hand.push(deck.pop());
+            }
+
+            const nextIdx = getNextTurnIndex(1);
+
+            await matchRef.update({
+                deck: deck,
+                discard: discard,
+                ['hands/' + playerId]: hand,
+                turnIndex: nextIdx,
+                drawStack: 0,
+                turnStartedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+        }
+
+        async function drawCard() {
+            if (!myTurn) return;
+            const drawStack = gameState.drawStack || 0;
+            if (drawStack > 0) {
+                await drawCards(currentUser.uid, drawStack);
+            } else {
+                await drawCards(currentUser.uid, 1);
             }
         }
         
         function tryPlayCard(index) {
-            if (!myTurn || gameState.actionPending) return;
+            if (!myTurn) return;
             const myCards = gameState.hands[currentUser.uid] || [];
             const card = myCards[index];
+            const topCard = (gameState.discard || [])[(gameState.discard || []).length - 1];
+            const drawStack = gameState.drawStack || 0;
+            const settings = gameState.settings || {};
+            
+            if (!isPlayable(card, topCard, gameState.currentColor, drawStack, settings.stacking)) return;
             
             if (card.color === 'wild') {
-                pendingPlayCard = { index, card };
+                pendingPlayCard = { index: index, card: card };
                 document.getElementById('color-modal').style.display = 'flex';
                 return;
             }
             
-            playCard(index, card, card.color);
+            playCard(currentUser.uid, index, card, card.color);
         }
         
         function chooseColor(color) {
             document.getElementById('color-modal').style.display = 'none';
             if (pendingPlayCard) {
-                playCard(pendingPlayCard.index, pendingPlayCard.card, color);
+                playCard(currentUser.uid, pendingPlayCard.index, pendingPlayCard.card, color);
                 pendingPlayCard = null;
             }
         }
         
-        async function playCard(index, card, chosenColor) {
-            const myCards = gameState.hands[currentUser.uid];
-            myCards.splice(index, 1);
+        async function playCard(playerId, index, card, chosenColor) {
+            const playerCards = (gameState.hands || {})[playerId] || [];
+            playerCards.splice(index, 1);
             
-            const discard = gameState.discard || [];
+            const discard = (gameState.discard || []).slice();
             discard.push(card);
             
-            let direction = gameState.direction;
-            let actionPending = false;
-            let nextIdx = getNextTurnIndex(1);
+            let direction = gameState.direction || 1;
+            let drawStack = gameState.drawStack || 0;
+            let steps = 1;
             
             if (card.type === 'Rev') {
                 direction *= -1;
-                // If only 2 players, reverse acts like skip
                 if (gameState.playerOrder.length === 2) {
-                    nextIdx = getNextTurnIndex(1, direction);
-                } else {
-                    nextIdx = getNextTurnIndex(1, direction);
+                    steps = 2;
                 }
             } else if (card.type === 'Skip') {
-                nextIdx = getNextTurnIndex(2, direction);
-            } else if (card.type === '+2' || card.type === '+4') {
-                actionPending = true; // Next player must draw
+                steps = 2;
+            } else if (card.type === '+2') {
+                drawStack += 2;
+            } else if (card.type === '+4') {
+                drawStack += 4;
             }
+            
+            const nextIdx = getNextTurnIndex(steps, direction);
             
             const updates = {
                 discard: discard,
-                [`hands/${currentUser.uid}`]: myCards,
+                ['hands/' + playerId]: playerCards,
                 direction: direction,
                 currentColor: chosenColor,
                 turnIndex: nextIdx,
-                actionPending: actionPending
+                drawStack: drawStack,
+                turnStartedAt: firebase.database.ServerValue.TIMESTAMP
             };
             
-            if (myCards.length === 0) {
+            if (playerCards.length === 0) {
                 updates.status = 'finished';
-                updates.winner = currentUser.uid;
+                updates.winner = playerId;
             }
             
             await matchRef.update(updates);
@@ -1041,33 +1250,105 @@
             return idx % len;
         }
 
-        async function handlePendingAction(topCard) {
-            if (topCard.type === '+2' || topCard.type === '+4') {
-                const drawCount = topCard.type === '+4' ? 4 : 2;
-                
-                let deck = gameState.deck || [];
-                const discard = gameState.discard || [];
-                const myCards = gameState.hands[currentUser.uid] || [];
-                
-                for(let i=0; i<drawCount; i++) {
-                    if (deck.length === 0) {
-                        const top = discard.pop();
-                        deck = discard.sort(() => Math.random() - 0.5);
-                        discard.push(top);
-                    }
-                    if (deck.length > 0) {
-                        myCards.push(deck.pop());
-                    }
+        function chooseBestColor(hand, card) {
+            if (card.color !== 'wild') return card.color;
+            const colorCounts = { red: 0, blue: 0, green: 0, yellow: 0 };
+            hand.forEach(function(c) {
+                if (colorCounts[c.color] !== undefined) colorCounts[c.color]++;
+            });
+            let best = 'red';
+            let bestCount = -1;
+            for (const c in colorCounts) {
+                if (colorCounts[c] > bestCount) {
+                    bestCount = colorCounts[c];
+                    best = c;
                 }
-                
-                const nextIdx = getNextTurnIndex(1);
-                await matchRef.update({
-                    deck: deck,
-                    discard: discard,
-                    [`hands/${currentUser.uid}`]: myCards,
-                    turnIndex: nextIdx,
-                    actionPending: false
-                });
+            }
+            return best;
+        }
+
+        function scheduleBotTurn() {
+            if (botTimer) { clearTimeout(botTimer); botTimer = null; }
+            if (!isHost || !gameState || gameState.status !== 'playing') return;
+
+            const playerOrder = gameState.playerOrder || [];
+            const turnId = playerOrder[gameState.turnIndex];
+            if (!turnId || !turnId.startsWith('bot_')) return;
+
+            botTimer = setTimeout(function() {
+                if (!gameState || gameState.status !== 'playing') return;
+                const currentTurnId = gameState.playerOrder[gameState.turnIndex];
+                if (currentTurnId !== turnId) return;
+                executeBotTurn(turnId);
+            }, BOT_DELAY_MS);
+        }
+
+        async function executeBotTurn(botId) {
+            if (!isHost || !gameState || gameState.status !== 'playing') return;
+            const playerOrder = gameState.playerOrder || [];
+            if (playerOrder[gameState.turnIndex] !== botId) return;
+
+            const botCards = gameState.hands[botId] || [];
+            const topCard = (gameState.discard || [])[(gameState.discard || []).length - 1];
+            const drawStack = gameState.drawStack || 0;
+            const settings = gameState.settings || {};
+
+            const playable = [];
+            botCards.forEach(function(card, idx) {
+                if (isPlayable(card, topCard, gameState.currentColor, drawStack, settings.stacking)) {
+                    playable.push({ index: idx, card: card });
+                }
+            });
+
+            if (playable.length > 0) {
+                let choice = playable[0];
+                if (drawStack > 0) {
+                    const stackers = playable.filter(function(p) { return p.card.type === '+2' || p.card.type === '+4'; });
+                    if (stackers.length > 0) choice = stackers[0];
+                }
+                const chosenColor = chooseBestColor(botCards, choice.card);
+                await playCard(botId, choice.index, choice.card, chosenColor);
+            } else {
+                if (drawStack > 0) {
+                    await drawCards(botId, drawStack);
+                } else {
+                    await drawCards(botId, 1);
+                }
+            }
+        }
+
+        function scheduleAfkSkip() {
+            if (afkTimer) { clearTimeout(afkTimer); afkTimer = null; }
+            if (!isHost || !gameState || gameState.status !== 'playing') return;
+
+            const playerOrder = gameState.playerOrder || [];
+            const turnId = playerOrder[gameState.turnIndex];
+            if (!turnId) return;
+
+            const turnStartedAt = gameState.turnStartedAt;
+            if (typeof turnStartedAt !== 'number') return; // Wait for server timestamp to resolve
+
+            const elapsed = Date.now() - turnStartedAt;
+            const remaining = Math.max(1000, AFK_TIMEOUT_MS - elapsed);
+
+            afkTimer = setTimeout(function() {
+                if (!gameState || gameState.status !== 'playing') return;
+                const currentTurnId = gameState.playerOrder[gameState.turnIndex];
+                if (currentTurnId !== turnId) return;
+                performAfkAction(turnId);
+            }, remaining);
+        }
+
+        async function performAfkAction(playerId) {
+            if (!isHost || !gameState || gameState.status !== 'playing') return;
+            const playerOrder = gameState.playerOrder || [];
+            if (playerOrder[gameState.turnIndex] !== playerId) return;
+
+            const drawStack = gameState.drawStack || 0;
+            if (drawStack > 0) {
+                await drawCards(playerId, drawStack);
+            } else {
+                await drawCards(playerId, 1);
             }
         }
         
