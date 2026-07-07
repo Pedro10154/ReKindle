@@ -13,8 +13,15 @@
     var AUTO_END_HOUR = 6;    // 6 AM
     var ROTATION_KEY = 'rekindle_rotation'; // '0', '90', '180', '270'
 
+    // Temporarily force light mode while dark mode is disabled.
+    var storedMode = localStorage.getItem(THEME_KEY);
+    if (storedMode === 'dark' || storedMode === 'auto') {
+        localStorage.setItem(THEME_KEY, 'light');
+    }
+
     function applyTheme() {
-        var mode = localStorage.getItem(THEME_KEY) || 'light';
+        // Temporarily force light mode regardless of saved preference.
+        var mode = 'light';
         var isDark = false;
 
         if (mode === 'dark') {
@@ -60,6 +67,7 @@
                 '    --bg-color: #000000;\n' +
                 '    --text-color: #ffffff;\n' +
                 '    background-color: #ffffff;\n' +
+                '    color: #000000;\n' +
                 '    height: 100%;\n' +
                 '    filter: invert(1) hue-rotate(180deg);\n' +
                 '}\n' +

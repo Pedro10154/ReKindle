@@ -82,3 +82,19 @@
     background: black;
     color: white;
 }
+
+.custom-option.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    color: #999;
+    pointer-events: none;
+}
+
+.custom-select-container.disabled,
+.custom-select-container.disabled .custom-select-trigger {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: #eee;
+    color: #888;
+    pointer-events: none;
+}

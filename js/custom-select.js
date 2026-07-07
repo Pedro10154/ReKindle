@@ -26,6 +26,10 @@ class CustomSelect {
         // Create Selected Display (The Button)
         this.selectedDisplay = document.createElement('div');
         this.selectedDisplay.className = 'custom-select-trigger';
+
+        // Respect disabled state on the native select
+        this.updateDisabledState();
+
         this.selectedDisplay.addEventListener('click', (e) => {
             e.stopPropagation();
             this.toggle();
@@ -71,6 +75,7 @@ class CustomSelect {
         // Observe changes to options (text, adding/removing)
         this.observer = new MutationObserver((mutations) => {
             // Re-render if options change
+            this.updateDisabledState();
             this.renderOptions();
             this.updateFromOriginal();
         });
@@ -104,10 +109,14 @@ class CustomSelect {
                 this.selectedDisplay.querySelector('.custom-trigger-text').textContent = option.text;
             }
 
-            item.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.select(option.value, option.text);
-            });
+            if (option.disabled) {
+                item.classList.add('disabled');
+            } else {
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.select(option.value, option.text);
+                });
+            }
 
             this.optionsList.appendChild(item);
         });
@@ -134,11 +143,13 @@ class CustomSelect {
     }
 
     toggle() {
+        if (this.selectElement.disabled) return;
         if (this.isOpen) this.close();
         else this.open();
     }
 
     open() {
+        if (this.selectElement.disabled) return;
         // Close all others first
         document.querySelectorAll('.custom-select-container').forEach(el => el.classList.remove('open'));
 
@@ -151,7 +162,16 @@ class CustomSelect {
         this.isOpen = false;
     }
 
+    updateDisabledState() {
+        const isDisabled = this.selectElement.disabled;
+        this.customSelect.classList.toggle('disabled', isDisabled);
+        this.selectedDisplay.classList.toggle('disabled', isDisabled);
+        if (isDisabled) this.close();
+    }
+
     select(value, text) {
+        if (this.selectElement.disabled) return;
+
         // Update Internal Value
         this.selectElement.value = value;
 
