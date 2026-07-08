@@ -1934,6 +1934,8 @@
   "pixel.status.posted": "Posted to KindleChat!",
   "pixel.status.shared": "Shared a pixel art!",
   "pixel.status.slow_down": "To ensure a good experience for everyone, please slow down. You've been posting a lot recently.",
+  "pixel.status.already_posted": "This pixel art has already been posted to KindleChat. Modify it to post again.",
+  "pixel.status.blank": "Blank pixel art cannot be posted.",
   "pixel.title": "Pixel",
   "pixel.tool.clear": "Clear",
   "pixel.tool.eraser": "Eraser",

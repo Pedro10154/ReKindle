@@ -956,6 +956,31 @@
         async function postToPixelChat() {
             if (!currentUser) return showModal(window.t('pixel.status.login_to_post', "You must be logged in to post."));
 
+            if (!currentDrawingId) {
+                performSave();
+            }
+
+            if (currentDrawingId) {
+                const item = manifest.find(m => m.id === currentDrawingId);
+                if (item && item.postedToKindleChat) {
+                    return showModal(window.t('pixel.status.already_posted', "This pixel art has already been posted to KindleChat. Modify it to post again."));
+                }
+            }
+
+            // Block blank (all-white) pixel art
+            let isBlank = true;
+            for (let r = 0; r < gridSize; r++) {
+                for (let c = 0; c < gridSize; c++) {
+                    if (grid[r][c] !== 0) {
+                        isBlank = false;
+                        break;
+                    }
+                }
+                if (!isBlank) break;
+            }
+            if (isBlank) {
+                return showModal(window.t('pixel.status.blank', "Blank pixel art cannot be posted."));
+            }
 
             // Render the grid at its native resolution (16x16 or 32x32) for storage
             const dataUrl = createPixelArtDataUrl(grid, gridSize);
@@ -993,6 +1018,15 @@
                 }
 
                 closeModal('post-confirm-modal');
+
+                // Mark this drawing as posted so it cannot be reposted unchanged
+                if (currentDrawingId) {
+                    const item = manifest.find(m => m.id === currentDrawingId);
+                    if (item) {
+                        item.postedToKindleChat = true;
+                        saveManifest();
+                    }
+                }
 
                 // Show success modal wrapper
                 const successModal = document.getElementById('success-modal');
@@ -1756,6 +1790,8 @@
                 // item.title = document.getElementById('drawing-title').value.trim() || "Untitled";
                 item.modified = Date.now();
                 item.thumbnail = canvas.toDataURL('image/png'); // Generate thumbnail
+                // Modifying the drawing removes the KindleChat posted tag
+                item.postedToKindleChat = false;
                 saveManifest();
             }
         }

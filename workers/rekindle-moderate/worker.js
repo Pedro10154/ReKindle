@@ -729,6 +729,22 @@ function getGridSize(gridDataStr) {
     return null;
 }
 
+function isBlankGrid(gridDataStr) {
+    try {
+        const grid = JSON.parse(gridDataStr);
+        if (!Array.isArray(grid)) return false;
+        for (let r = 0; r < grid.length; r++) {
+            const row = grid[r];
+            if (!Array.isArray(row)) return false;
+            for (let c = 0; c < row.length; c++) {
+                if (row[c] !== 0) return false;
+            }
+        }
+        return true;
+    } catch (e) { }
+    return false;
+}
+
 function formatFlaggedCategories(categories) {
     const friendlyNames = {
         sexual: "sexual content",
@@ -787,7 +803,7 @@ const RATE_LIMIT_CONFIG = {
     topic_comment: { capacity: 5, refillMs: 12000 },  // match kindlechat
     neighbourhood_post: { capacity: 5, refillMs: 300000 },
     neighbourhood_comment: { capacity: 10, refillMs: 30000 },
-    report: { capacity: 5, refillMs: 720000 }         // 12 minutes = 5/hr
+    report: { capacity: 60, refillMs: 3600000, refillAmount: 60 }  // 60 per hour, burst allowed
 };
 
 async function rtdbSocialGet(path, accessToken) {
@@ -869,7 +885,8 @@ async function consumeRateLimitToken(uid, contentType, accessToken) {
         // Refill tokens based on elapsed time
         const elapsed = now - bucket.lastRefill;
         const refills = Math.floor(elapsed / config.refillMs);
-        bucket.tokens = Math.min(config.capacity, bucket.tokens + refills);
+        const refillAmount = config.refillAmount || 1;
+        bucket.tokens = Math.min(config.capacity, bucket.tokens + (refills * refillAmount));
         bucket.lastRefill = bucket.lastRefill + (refills * config.refillMs);
 
         if (bucket.tokens < 1) {
@@ -1303,14 +1320,22 @@ export default {
                     return new Response(JSON.stringify({ allowed: false, error: `Rate limit exceeded. Please wait ${rl.retryAfter} second(s) before posting.`, retryAfter: rl.retryAfter }), { status: 429, headers });
                 }
 
-                // Duplicate / repetitive content detection
-                const dupCheck = await checkUserRecentContent(uid, "kindlechat", trimmed, accessToken);
-                if (dupCheck.duplicate) {
-                    return new Response(JSON.stringify({ allowed: false, error: "You already sent this recently. Please wait a few minutes.", retryAfter: dupCheck.retryAfter }), { status: 429, headers });
-                }
-
                 const isFlipnote = body.is_flipnote === true;
                 const isPixelArt = body.is_pixel_art === true;
+
+                // Duplicate / repetitive content detection
+                if (isPixelArt && body.grid_data) {
+                    const pixelDupCheck = await checkUserRecentContent(uid, "kindlechat_pixel_art", body.grid_data, accessToken);
+                    if (pixelDupCheck.duplicate) {
+                        return new Response(JSON.stringify({ allowed: false, error: "You already posted this pixel art recently. Modify it to post again.", retryAfter: pixelDupCheck.retryAfter }), { status: 429, headers });
+                    }
+                } else if (!isPixelArt && !isFlipnote) {
+                    const dupCheck = await checkUserRecentContent(uid, "kindlechat", trimmed, accessToken);
+                    if (dupCheck.duplicate) {
+                        return new Response(JSON.stringify({ allowed: false, error: "You already sent this recently. Please wait a few minutes.", retryAfter: dupCheck.retryAfter }), { status: 429, headers });
+                    }
+                }
+
                 const skipOpenAIModeration = isFlipnote || isPixelArt;
 
                 // Moderation: text-only messages are checked; pixel art / flipbook bypass OpenAI.
@@ -1341,6 +1366,10 @@ export default {
                     return new Response(JSON.stringify({ error: "64× pixel art is not supported in chat." }), { status: 400, headers });
                 }
 
+                if (isPixelArt && isBlankGrid(body.grid_data)) {
+                    return new Response(JSON.stringify({ error: "Blank pixel art cannot be posted." }), { status: 400, headers });
+                }
+
                 console.log("[WORKER] kindlechat post — token claims:", { email: payload.email, ageVerified: payload.ageVerified, moderator: payload.moderator, aud: payload.aud });
                 const result = await rtdbPushWithAccessToken("kindlechat/messages", msgData, accessToken);
 
@@ -1361,6 +1390,12 @@ export default {
                 if (trimmed) {
                     recordUserRecentContent(uid, "kindlechat", trimmed, accessToken).catch(e => console.error("[DEDUPE] record failed:", e.message));
                     cleanupUserRecentContent(uid, "kindlechat", accessToken).catch(e => console.error("[DEDUPE] cleanup failed:", e.message));
+                }
+
+                // Record pixel art grid for duplicate detection (non-blocking)
+                if (isPixelArt && body.grid_data) {
+                    recordUserRecentContent(uid, "kindlechat_pixel_art", body.grid_data, accessToken).catch(e => console.error("[DEDUPE] record failed:", e.message));
+                    cleanupUserRecentContent(uid, "kindlechat_pixel_art", accessToken).catch(e => console.error("[DEDUPE] cleanup failed:", e.message));
                 }
 
                 return new Response(JSON.stringify({ allowed: true, key: result.name }), { status: 200, headers });
