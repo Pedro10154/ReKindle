@@ -544,6 +544,37 @@
             transform: translate(1px, 1px);
             box-shadow: none;
         }
+
+        .report-btn {
+            width: 20px;
+            height: 20px;
+            border: 1px solid black;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            text-align: center;
+            line-height: 18px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            box-shadow: 1px 1px 0 #999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+            flex-shrink: 0;
+            opacity: 0.5;
+            color: #cc0000;
+            margin-left: 4px;
+        }
+
+        .report-btn:hover {
+            opacity: 1.0;
+            background: #ffe6e6;
+        }
+
+        .suggestion-report {
+            margin-right: 8px;
+        }
     </style>
 
     <link rel="stylesheet" href="css/custom-select.css">
@@ -556,6 +587,8 @@
     <script src="theme.js?v=18"></script>
     <script src="js/i18n.js"></script>
     <script src="js/custom-select.js"></script>
+    <script src="js/reports.js"></script>
+    <script src="bad_words.js?v=4"></script>
 </head>
 
 <body>
@@ -619,8 +652,8 @@
                 <div class="toolbar">
                     <button class="sys-btn" onclick="closeDetailView()" data-i18n="suggestions.btn.back">← Back</button>
                     <span id="detail-title-bar"
-                        style="font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 60%;">...</span>
-                    <div></div> <!-- spacer -->
+                        style="font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 50%;">...</span>
+                    <div id="detail-report-btn" class="report-btn" style="display:none;" title="Report">!</div>
                 </div>
 
                 <div class="detail-content">
@@ -1184,16 +1217,29 @@
 
                     const crown = isAuthorPro ? CROWN_SVG : '';
 
+                    const censoredTitle = censorText(data.title);
+                    const censoredDescription = censorText(data.description);
+
+                    // Report button (hidden for author's own content)
+                    let reportBtnHtml = '';
+                    if (currentUser && data.authorUid && data.authorUid !== currentUser.uid) {
+                        const safeSnapshot = escapeJsString(censoredTitle + ' - ' + censoredDescription);
+                        reportBtnHtml = `<div class="report-btn suggestion-report" onclick="event.stopPropagation(); rekindleOpenReportModal({contentType:'suggestion',contentId:'${escapeHtml(id)}',contentPath:'suggestions/${escapeHtml(id)}',reportedUserId:'${escapeHtml(data.authorUid || '')}',contentSnapshot:'${safeSnapshot}'})" title="Report">!</div>`;
+                    }
+
                     el.innerHTML = `
                     <div class="sugg-header">
                         <div>
                             ${statusHtml}
-                            <span class="sugg-title">${escapeHtml(data.title)}</span>
+                            <span class="sugg-title">${escapeHtml(censoredTitle)}</span>
                         </div>
-                        <button class="${voteClass}" onclick="event.stopPropagation(); toggleVote('${id}')">▲ ${voteCount}</button>
+                        <div style="display:flex; align-items:center;">
+                            ${reportBtnHtml}
+                            <button class="${voteClass}" onclick="event.stopPropagation(); toggleVote('${id}')">▲ ${voteCount}</button>
+                        </div>
                     </div>
                     <div style="font-size:0.9rem; margin-bottom:5px; height: 1.2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                        ${escapeHtml(data.description)}
+                        ${escapeHtml(censoredDescription)}
                     </div>
                     <div class="sugg-meta">${crown}by ${escapeHtml(data.authorName || (window.t ? window.t('suggestions.msg.anonymous') : 'Anon'))}</div>
                 `;
@@ -1213,9 +1259,12 @@
                 document.getElementById('main-toolbar').style.display = 'none';
                 document.getElementById('tab-bar').style.display = 'none'; // Hide tabs
 
-                document.getElementById('detail-title').textContent = data.title;
-                document.getElementById('detail-title-bar').textContent = data.title;
-                document.getElementById('detail-desc').textContent = data.description;
+                const censoredTitle = censorText(data.title);
+                const censoredDescription = censorText(data.description);
+
+                document.getElementById('detail-title').textContent = censoredTitle;
+                document.getElementById('detail-title-bar').textContent = censoredTitle;
+                document.getElementById('detail-desc').textContent = censoredDescription;
 
                 let dateStr = window.t ? window.t('suggestions.msg.unknown_date') : 'Unknown Date';
                 // SAFE ACCESS: No optional chaining
@@ -1243,6 +1292,21 @@
                 updateVoteBtn(data.upvotes || {});
                 updateAdminControls(data);
                 loadComments(id);
+
+                // Setup detail report button
+                const reportBtn = document.getElementById('detail-report-btn');
+                if (reportBtn) {
+                    if (currentUser && data.authorUid && data.authorUid !== currentUser.uid) {
+                        const safeSnapshot = escapeJsString(censoredTitle + ' - ' + censoredDescription);
+                        const safeId = escapeJsString(id);
+                        const safeAuthorUid = escapeJsString(data.authorUid || '');
+                        reportBtn.setAttribute('onclick', `rekindleOpenReportModal({contentType:'suggestion',contentId:'${safeId}',contentPath:'suggestions/${safeId}',reportedUserId:'${safeAuthorUid}',contentSnapshot:'${safeSnapshot}'})`);
+                        reportBtn.style.display = 'flex';
+                    } else {
+                        reportBtn.removeAttribute('onclick');
+                        reportBtn.style.display = 'none';
+                    }
+                }
             };
 
             window.updateAdminControls = function (data) {
@@ -1475,6 +1539,11 @@
                     return;
                 }
 
+                if (containsBadWords(newTitle) || containsBadWords(newDesc)) {
+                    showMessage(window.t ? window.t('suggestions.msg.profanity_title') : 'Family-Friendly', window.t ? window.t('suggestions.msg.profanity') : 'Please keep suggestions and comments family-friendly.');
+                    return;
+                }
+
                 rtdb.ref('suggestions/' + currentSuggestionId).update({
                     title: newTitle,
                     description: newDesc
@@ -1622,14 +1691,33 @@
                         const isDev = (c.authorEmail === 'ukiyo@rekindle.ink') || (c.authorName && c.authorName.toLowerCase() === 'ukiyo');
                         const devBadge = isDev ? '<span class="dev-badge">DEV</span>' : '';
 
-                        const deleteBtn = isOwner ? `<button class="comment-delete-btn" onclick="deleteComment('${c.key}')">🗑</button>` : '';
+                        const deleteBtn = isOwner ? `<button class="comment-delete-btn" onclick="deleteComment('${escapeHtml(c.key)}')">🗑</button>` : '';
+
+                        const censoredCommentText = censorText(c.text);
+
+                        // Report button (hidden for author's own comments)
+                        let reportCommentBtn = '';
+                        if (currentUser && c.authorUid && c.authorUid !== currentUser.uid) {
+                            const safeCommentSnapshot = escapeJsString(censoredCommentText);
+                            const safeCommentKey = escapeJsString(c.key);
+                            const safeCommentAuthorUid = escapeJsString(c.authorUid || '');
+                            const safeSuggestionId = escapeJsString(currentSuggestionId || id);
+                            reportCommentBtn = `<div class="report-btn" onclick="rekindleOpenReportModal({contentType:'suggestion_comment',contentId:'${safeCommentKey}',contentPath:'suggestions/${safeSuggestionId}/comments/${safeCommentKey}',reportedUserId:'${safeCommentAuthorUid}',contentSnapshot:'${safeCommentSnapshot}'})" title="Report">!</div>`;
+                        }
 
                         const el = document.createElement('div');
                         el.className = 'comment-item' + (isCommentPro ? ' supporter' : '');
                         el.innerHTML = `
-                            <span class="comment-author">${devBadge}${crown}${escapeHtml(c.authorName)}:</span>
-                            <span>${escapeHtml(c.text)}</span>
-                            ${deleteBtn}
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                                <div style="flex:1;">
+                                    <span class="comment-author">${devBadge}${crown}${escapeHtml(c.authorName)}:</span>
+                                    <span>${escapeHtml(censoredCommentText)}</span>
+                                </div>
+                                <div style="display:flex; align-items:center; flex-shrink:0; margin-left:8px;">
+                                    ${reportCommentBtn}
+                                    ${deleteBtn}
+                                </div>
+                            </div>
                         `;
                         list.appendChild(el);
                     });
@@ -1659,6 +1747,11 @@
                 const inp = document.getElementById('comment-input');
                 const text = inp.value.trim();
                 if (!text || !currentSuggestionId || !currentUser) return;
+
+                if (containsBadWords(text)) {
+                    showMessage(window.t ? window.t('suggestions.msg.profanity_title') : 'Family-Friendly', window.t ? window.t('suggestions.msg.profanity') : 'Please keep suggestions and comments family-friendly.');
+                    return;
+                }
 
                 const commentsRef = rtdb.ref('suggestions/' + currentSuggestionId + '/comments');
                 commentsRef.once('value').then(function (snapshot) {
@@ -1774,6 +1867,11 @@
                     return;
                 }
 
+                if (containsBadWords(title) || containsBadWords(desc)) {
+                    showMessage(window.t ? window.t('suggestions.msg.profanity_title') : 'Family-Friendly', window.t ? window.t('suggestions.msg.profanity') : 'Please keep suggestions and comments family-friendly.');
+                    return;
+                }
+
 
                 // Logic moved to earlier in function for validation
                 // const radios = ... 
@@ -1860,6 +1958,29 @@
                     .replace(/>/g, "&gt;")
                     .replace(/"/g, "&quot;")
                     .replace(/'/g, "&#039;");
+            }
+
+            function censorText(text) {
+                if (!text || !window.filterBadWords) return text || '';
+                return window.filterBadWords(String(text));
+            }
+
+            function containsBadWords(text) {
+                if (!text || !window.filterBadWords) return false;
+                return window.filterBadWords(String(text)) !== String(text);
+            }
+
+            function escapeJsString(text) {
+                if (!text) return '';
+                return String(text)
+                    .replace(/\\/g, '\\\\')
+                    .replace(/'/g, "\\'")
+                    .replace(/\n/g, '\\n')
+                    .replace(/\r/g, '\\r')
+                    .replace(/\u0026/g, '\u0026amp;')
+                    .replace(/\u003c/g, '\u0026lt;')
+                    .replace(/\u003e/g, '\u0026gt;')
+                    .replace(/"/g, '\u0026quot;');
             }
 
         } catch (e) {
