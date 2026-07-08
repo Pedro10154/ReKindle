@@ -433,6 +433,7 @@
 
         .beta-label,
         .new-label,
+        .one-p-label,
         .two-p-label,
         .live-label,
         .disabled-label {
@@ -456,6 +457,7 @@
         }
 
         .new-label,
+        .one-p-label,
         .two-p-label {
             background: white;
             color: black;
@@ -1264,14 +1266,14 @@
                 }
                 document.querySelectorAll('.favorite-toggle').forEach(t => t.classList.add('show-toggle'));
                 document.querySelectorAll('.hide-toggle').forEach(t => t.classList.add('show-toggle'));
-                document.querySelectorAll('.beta-label, .new-label, .two-p-label, .live-label, .disabled-label, .plus-label').forEach(l => l.style.display = 'none');
+                document.querySelectorAll('.beta-label, .new-label, .one-p-label, .two-p-label, .live-label, .disabled-label, .plus-label').forEach(l => l.style.display = 'none');
             } else {
                 btn.innerText = "Edit";
                 if (resetBtn) resetBtn.style.display = 'none';
                 if (featToggle) featToggle.style.display = 'none';
                 document.querySelectorAll('.favorite-toggle').forEach(t => t.classList.remove('show-toggle'));
                 document.querySelectorAll('.hide-toggle').forEach(t => t.classList.remove('show-toggle'));
-                document.querySelectorAll('.beta-label, .new-label, .two-p-label, .live-label, .disabled-label, .plus-label').forEach(l => l.style.display = 'block');
+                document.querySelectorAll('.beta-label, .new-label, .one-p-label, .two-p-label, .live-label, .disabled-label, .plus-label').forEach(l => l.style.display = 'block');
             }
             if (currentFilter === 'all') renderFeaturedSection();
             renderAppGrid(currentFilter);
@@ -1376,8 +1378,9 @@
             if (!isEditMode) {
                 if (app.live && !showPlus && !app.isFolder) extraHtml += `<div class="live-label">LIVE</div>`;
                 else if (app.beta && !showPlus && !app.isFolder) extraHtml += `<div class="beta-label">BETA</div>`;
-                
-                if (app.newBadge && !showPlus && !app.isFolder) extraHtml += `<div class="new-label" data-i18n="badge.new">NEW</div>`;
+                else if (app.new && !showPlus && !app.isFolder) extraHtml += `<div class="new-label" data-i18n="badge.new">NEW</div>`;
+                else if (app.single && !showPlus && !app.isFolder) extraHtml += `<div class="one-p-label" data-i18n="badge.1p">1P</div>`;
+
                 if (app.cat === 'two_player' && !showPlus && !app.isFolder) extraHtml += `<div class="two-p-label" data-i18n="badge.2p">2P</div>`;
                 if (app.disabled) extraHtml += `<div class="disabled-label">CLOSED</div>`;
                 else if (showPlus && !app.isFolder) extraHtml += `<div class="plus-label">+</div>`;
@@ -1446,7 +1449,8 @@
                 if (!isEditMode) {
                     if (app.plus && !isPro) badgeHtml = `<div class="plus-label" style="right:5px; top:5px;">+</div>`;
                     else if (app.live) badgeHtml = '<div class="live-label">LIVE</div>';
-                    else if (app.newBadge) badgeHtml = '<div class="new-label">NEW</div>';
+                    else if (app.new) badgeHtml = '<div class="new-label" data-i18n="badge.new">NEW</div>';
+                    else if (app.single) badgeHtml = '<div class="one-p-label" data-i18n="badge.1p">1P</div>';
                     else if (app.cat === 'two_player') badgeHtml = '<div class="two-p-label" data-i18n="badge.2p">2P</div>';
                 }
 
@@ -1561,7 +1565,7 @@
             if (isEditMode) {
                 document.getElementById('app-grid').querySelectorAll('.favorite-toggle').forEach(t => t.classList.add('show-toggle'));
                 document.getElementById('app-grid').querySelectorAll('.hide-toggle').forEach(t => t.classList.add('show-toggle'));
-                document.getElementById('app-grid').querySelectorAll('.beta-label, .new-label, .two-p-label, .folder-label, .live-label, .disabled-label, .plus-label').forEach(l => l.style.display = 'none');
+                document.getElementById('app-grid').querySelectorAll('.beta-label, .new-label, .one-p-label, .two-p-label, .folder-label, .live-label, .disabled-label, .plus-label').forEach(l => l.style.display = 'none');
             }
         }
 

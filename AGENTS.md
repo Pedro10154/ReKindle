@@ -720,6 +720,7 @@ Games that exist in multiple modes are grouped by name in the dashboard (`index.
 | Single-player | `single: true` in `icons.js` | `1P` (`one-p-label`) |
 | Local 2-player | `cat: 'two_player'` | `2P` (`two-p-label`) |
 | Live online | `live: true` | `LIVE` (`live-label`) |
+| New app | `new: true` in `icons.js` | `NEW` (`new-label`) |
 
 Single-player entries that have a multiplayer counterpart (e.g. `chess`, `checkers`, `pool`, `yahtzee`, `battleship`, `connect4`, `dotsandboxes`, `tictactoe`, `uno`) should set `single: true` so the folder items are labeled with the game name and the correct badge.
 

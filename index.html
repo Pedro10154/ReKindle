@@ -597,6 +597,7 @@
 
         .beta-label,
         .new-label,
+        .one-p-label,
         .two-p-label,
         .live-label,
         .disabled-label {
@@ -620,6 +621,7 @@
         }
 
         .new-label,
+        .one-p-label,
         .two-p-label {
             background: white;
             color: black;
@@ -1806,14 +1808,14 @@
                 }
                 document.querySelectorAll('.favorite-toggle').forEach(t => t.classList.add('show-toggle'));
                 document.querySelectorAll('.hide-toggle').forEach(t => t.classList.add('show-toggle'));
-                document.querySelectorAll('.beta-label, .new-label, .two-p-label, .live-label, .disabled-label, .plus-label').forEach(l => l.style.display = 'none');
+                document.querySelectorAll('.beta-label, .new-label, .one-p-label, .two-p-label, .live-label, .disabled-label, .plus-label').forEach(l => l.style.display = 'none');
             } else {
                 btn.innerText = "Edit";
                 if (resetBtn) resetBtn.style.display = 'none';
                 if (featToggle) featToggle.style.display = 'none';
                 document.querySelectorAll('.favorite-toggle').forEach(t => t.classList.remove('show-toggle'));
                 document.querySelectorAll('.hide-toggle').forEach(t => t.classList.remove('show-toggle'));
-                document.querySelectorAll('.beta-label, .new-label, .two-p-label, .live-label, .disabled-label, .plus-label').forEach(l => l.style.display = 'block');
+                document.querySelectorAll('.beta-label, .new-label, .one-p-label, .two-p-label, .live-label, .disabled-label, .plus-label').forEach(l => l.style.display = 'block');
             }
             if (currentFilter === 'all') renderFeaturedSection();
             renderAppGrid(currentFilter);
@@ -1919,6 +1921,8 @@
             if (!isEditMode) {
                 if (app.live && !showPlus && !app.isFolder) extraHtml += `<div class="live-label">LIVE</div>`;
                 else if (app.beta && !showPlus && !app.isFolder) extraHtml += `<div class="beta-label">BETA</div>`;
+                else if (app.new && !showPlus && !app.isFolder) extraHtml += `<div class="new-label">NEW</div>`;
+                else if (app.single && !showPlus && !app.isFolder) extraHtml += `<div class="one-p-label" data-i18n="badge.1p">1P</div>`;
 
                 if (app.cat === 'two_player' && !showPlus && !app.isFolder) extraHtml += `<div class="two-p-label" data-i18n="badge.2p">2P</div>`;
                 if (app.disabled) extraHtml += `<div class="disabled-label">CLOSED</div>`;
@@ -2253,7 +2257,7 @@
             if (isEditMode) {
                 document.getElementById('app-grid').querySelectorAll('.favorite-toggle').forEach(t => t.classList.add('show-toggle'));
                 document.getElementById('app-grid').querySelectorAll('.hide-toggle').forEach(t => t.classList.add('show-toggle'));
-                document.getElementById('app-grid').querySelectorAll('.beta-label, .new-label, .two-p-label, .folder-label, .live-label, .disabled-label, .plus-label').forEach(l => l.style.display = 'none');
+                document.getElementById('app-grid').querySelectorAll('.beta-label, .new-label, .one-p-label, .two-p-label, .folder-label, .live-label, .disabled-label, .plus-label').forEach(l => l.style.display = 'none');
             }
         }
 
@@ -2269,19 +2273,6 @@
             const fragment = document.createDocumentFragment();
             groupedAppsArray.forEach(app => {
                 const clonedApp = Object.assign({}, app);
-
-                let label = "Single";
-                let key = "folder.single";
-                if (clonedApp.live) {
-                    label = "Live";
-                    key = "folder.live";
-                } else if (clonedApp.cat === 'two_player') {
-                    label = "Local";
-                    key = "folder.local";
-                }
-
-                clonedApp.name = window.t ? window.t(key, label) : label;
-
                 const element = createAppElement(clonedApp);
                 element.id = 'modal-icon-' + clonedApp.id;
 
