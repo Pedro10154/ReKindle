@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+    <meta charset="UTF-8">
+    <title>Dots & Boxes</title>
+    <style>
+        /* SYSTEM 7 AESTHETICS */
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --border: 2px solid #000000;
+            --shadow: 4px 4px 0px #000000;
+            --stripe-pattern: repeating-linear-gradient(0deg, transparent, transparent 2px, #000 3px, #000 4px);
+            --player2-pattern: repeating-linear-gradient(45deg, #000, #000 4px, transparent 4px, transparent 8px);
+        }
+
+        * {
+            transition: none !important;
+            animation: none !important;
+        }
+
+        body {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            font-family: "Geneva", "Verdana", sans-serif;
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #e5e5e5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            box-sizing: border-box;
+        }
+
+        /* WINDOW FRAME */
+        .window {
+            background: white;
+            border: 2px solid black;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            min-height: fit-content;
+            width: 100%;
+            max-width: 500px;
+            position: relative;
+        }
+
+        /* TITLE BAR */
+        .title-bar {
+            height: 35px;
+            border-bottom: 2px solid black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            padding: 0 10px;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .title-stripes {
+            position: absolute;
+            top: 4px;
+            bottom: 4px;
+            left: 4px;
+            right: 4px;
+            background-image: var(--stripe-pattern);
+            z-index: 0;
+        }
+
+        .title-text {
+            background: white;
+            padding: 0 15px;
+            font-weight: bold;
+            z-index: 1;
+            font-size: 1.1rem;
+            display: inline-flex;
+            align-items: center;
+            height: 100%;
+            box-sizing: border-box;
+        }
+
+        .close-box {
+            position: absolute;
+            left: 10px;
+            width: 18px;
+            height: 18px;
+            border: 2px solid black;
+            background: white;
+            z-index: 2;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-family: sans-serif;
+            font-size: 0.9rem;
+            line-height: 1;
+            box-shadow: 2px 2px 0 black;
+        }
+
+        .close-box:active {
+            background: black;
+            color: white;
+            transform: translate(1px, 1px);
+            box-shadow: none;
+        }
+
+        /* CONTENT AREA */
+        .window-content {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: white;
+            overflow-y: auto;
+        }
+
+        /* STATUS BAR */
+        #status-bar {
+            width: 100%;
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.1rem;
+            border: 2px solid black;
+            padding: 10px 0;
+            margin-bottom: 20px;
+            background: #eee;
+            font-family: "Courier New", monospace;
+            display: flex;
+            justify-content: space-between;
+            box-sizing: border-box;
+            padding-left: 15px;
+            padding-right: 15px;
+        }
+
+        .score-block {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .score-indicator {
+            width: 16px;
+            height: 16px;
+            border: 2px solid black;
+            margin-right: 8px;
+            display: inline-block;
+        }
+
+        .score-indicator.p1 {
+            background-color: black;
+        }
+
+        .score-indicator.p2 {
+            background-image: var(--player2-pattern);
+        }
+
+        #turn-indicator {
+            flex-grow: 1;
+        }
+
+        /* THE BOARD */
+        #board {
+            display: grid;
+            grid-template-columns: 8px 1fr 8px 1fr 8px 1fr 8px 1fr 8px;
+            grid-template-rows: 8px 1fr 8px 1fr 8px 1fr 8px 1fr 8px;
+            gap: 0;
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 20px;
+            aspect-ratio: 1/1;
+        }
+
+        .dot {
+            background-color: black;
+            width: 100%;
+            height: 100%;
+        }
+
+        .line {
+            background-color: transparent;
+            cursor: pointer;
+            z-index: 5;
+        }
+
+        .line.h {
+            position: relative;
+        }
+
+        .line.h::after {
+            content: '';
+            position: absolute;
+            top: -10px;
+            bottom: -10px;
+            left: 0;
+            right: 0;
+        }
+
+        .line.v {
+            position: relative;
+        }
+
+        .line.v::after {
+            content: '';
+            position: absolute;
+            left: -10px;
+            right: -10px;
+            top: 0;
+            bottom: 0;
+        }
+
+        .line:not(.claimed):hover {
+            background-color: #ddd;
+        }
+
+        .line:disabled, .line.disabled {
+            cursor: default;
+            pointer-events: none;
+        }
+
+        .line.claimed.p1 {
+            background-color: black;
+        }
+
+        .line.claimed.p2 {
+            background-image: var(--player2-pattern);
+        }
+
+        .box {
+            background-color: transparent;
+            z-index: 1;
+        }
+
+        .box.claimed.p1 {
+            background-color: black;
+        }
+
+        .box.claimed.p2 {
+            background-image: var(--player2-pattern);
+        }
+
+        /* CONTROLS */
+        .controls {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+
+        .controls>*+* {
+            margin-left: 10px;
+        }
+
+        .sys-btn {
+            background: white;
+            border: 2px solid black;
+            padding: 8px 15px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            cursor: pointer;
+            box-shadow: 3px 3px 0 black;
+            text-transform: uppercase;
+        }
+
+        .sys-btn.active {
+            background: black;
+            color: white;
+            box-shadow: none;
+            transform: translate(1px, 1px);
+        }
+
+        .sys-btn:active {
+            background: black;
+            color: white;
+            transform: translate(2px, 2px);
+            box-shadow: none;
+        }
+    </style>
+    <script src="js/i18n.js"></script>
+    <script src="theme.js?v=18"></script>
+</head>
+
+<body>
+
+    <div class="window">
+        <div class="title-bar">
+            <div class="title-stripes"></div>
+            <div class="close-box" onclick="window.location.href='index'" data-i18n="battleship.btn.close">X</div>
+            <span class="title-text" data-i18n="2pdotsandboxes.title">Dots & Boxes</span>
+        </div>
+
+        <div class="window-content">
+            <div id="status-bar">
+                <div class="score-block">
+                    <div class="score-indicator p1"></div><span id="score-p1">0</span>
+                </div>
+                <div id="turn-indicator" data-i18n="2pdotsandboxes.turn.p1">Your Turn</div>
+                <div class="score-block"><span id="score-p2">0</span>
+                    <div class="score-indicator p2" style="margin-right:0; margin-left:8px;"></div>
+                </div>
+            </div>
+
+            <div id="board">
+                <!-- Generated by JS -->
+            </div>
+
+            <div class="controls">
+                <button class="sys-btn" id="btn-easy" onclick="setDifficulty('easy')" data-i18n="tictactoe.difficulty.easy">Easy</button>
+                <button class="sys-btn" id="btn-hard" onclick="setDifficulty('hard')" data-i18n="tictactoe.difficulty.hard">Hard</button>
+                <button class="sys-btn" onclick="initGame()" data-i18n="tictactoe.btn.reset">New Game</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- GAME CONSTANTS ---
+        const GRID_SIZE = 5; // 5x5 dots = 4x4 boxes
+        const HUMAN = 1;
+        const CPU = 2;
+
+        // --- GAME STATE ---
+        let difficulty = 'hard';
+        let currentPlayer = HUMAN;
+        let scores = { 1: 0, 2: 0 };
+        let hLines = [];
+        let vLines = [];
+        let boxes = [];
+        let gameActive = true;
+        let cpuTimer = null;
+
+        window.onload = function () {
+            if (window.rekindleApplyWallpaper) window.rekindleApplyWallpaper();
+            setDifficulty('hard');
+            window.addEventListener('resize', resizeBoard);
+        };
+
+        function resizeBoard() {
+            const board = document.getElementById('board');
+            if (board) {
+                board.style.height = board.offsetWidth + 'px';
+            }
+        }
+
+        function setDifficulty(level) {
+            difficulty = level;
+            document.querySelectorAll('.sys-btn').forEach(function (b) { b.classList.remove('active'); });
+            document.getElementById('btn-' + level).classList.add('active');
+            initGame();
+        }
+
+        function initGame() {
+            currentPlayer = HUMAN;
+            scores = { 1: 0, 2: 0 };
+            gameActive = true;
+            if (cpuTimer) {
+                clearTimeout(cpuTimer);
+                cpuTimer = null;
+            }
+
+            hLines = [];
+            for (let r = 0; r < GRID_SIZE; r++) {
+                hLines[r] = [];
+                for (let c = 0; c < GRID_SIZE - 1; c++) {
+                    hLines[r][c] = 0;
+                }
+            }
+
+            vLines = [];
+            for (let r = 0; r < GRID_SIZE - 1; r++) {
+                vLines[r] = [];
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    vLines[r][c] = 0;
+                }
+            }
+
+            boxes = [];
+            for (let r = 0; r < GRID_SIZE - 1; r++) {
+                boxes[r] = [];
+                for (let c = 0; c < GRID_SIZE - 1; c++) {
+                    boxes[r][c] = 0;
+                }
+            }
+
+            renderBoard();
+            updateStatus();
+            setTimeout(resizeBoard, 50);
+        }
+
+        function renderBoard() {
+            const boardEl = document.getElementById('board');
+            boardEl.innerHTML = '';
+
+            for (let cssRow = 0; cssRow < (GRID_SIZE * 2) - 1; cssRow++) {
+                for (let cssCol = 0; cssCol < (GRID_SIZE * 2) - 1; cssCol++) {
+
+                    const el = document.createElement('div');
+
+                    if (cssRow % 2 === 0 && cssCol % 2 === 0) {
+                        el.className = 'dot';
+                    }
+                    else if (cssRow % 2 === 0 && cssCol % 2 !== 0) {
+                        const r = Math.floor(cssRow / 2);
+                        const c = Math.floor(cssCol / 2);
+                        el.className = 'line h';
+                        if (hLines[r][c] !== 0) {
+                            el.classList.add('claimed');
+                            el.classList.add(hLines[r][c] === 1 ? 'p1' : 'p2');
+                        } else if (!gameActive || currentPlayer !== HUMAN) {
+                            el.classList.add('disabled');
+                            el.onclick = function () { handleLineClick('h', r, c); };
+                        } else {
+                            el.onclick = function () { handleLineClick('h', r, c); };
+                        }
+                    }
+                    else if (cssRow % 2 !== 0 && cssCol % 2 === 0) {
+                        const r = Math.floor(cssRow / 2);
+                        const c = Math.floor(cssCol / 2);
+                        el.className = 'line v';
+                        if (vLines[r][c] !== 0) {
+                            el.classList.add('claimed');
+                            el.classList.add(vLines[r][c] === 1 ? 'p1' : 'p2');
+                        } else if (!gameActive || currentPlayer !== HUMAN) {
+                            el.classList.add('disabled');
+                            el.onclick = function () { handleLineClick('v', r, c); };
+                        } else {
+                            el.onclick = function () { handleLineClick('v', r, c); };
+                        }
+                    }
+                    else {
+                        const r = Math.floor(cssRow / 2);
+                        const c = Math.floor(cssCol / 2);
+                        el.className = 'box';
+                        if (boxes[r][c] !== 0) {
+                            el.classList.add('claimed');
+                            el.classList.add(boxes[r][c] === 1 ? 'p1' : 'p2');
+                        }
+                    }
+
+                    el.style.gridRow = cssRow + 1;
+                    el.style.gridColumn = cssCol + 1;
+
+                    boardEl.appendChild(el);
+                }
+            }
+        }
+
+        function handleLineClick(type, r, c) {
+            if (!gameActive || currentPlayer !== HUMAN) return;
+
+            const boxesCompleted = claimLine(type, r, c, HUMAN);
+            if (boxesCompleted === -1) return;
+
+            if (boxesCompleted > 0) {
+                scores[HUMAN] += boxesCompleted;
+                checkGameOver();
+                if (gameActive) {
+                    document.getElementById('turn-indicator').innerText = window.t ? window.t('2pdotsandboxes.turn.p1') : "Your Turn Again";
+                }
+            } else {
+                currentPlayer = CPU;
+                updateStatus();
+                renderBoard();
+                scheduleCpuTurn();
+            }
+
+            renderBoard();
+            updateStatus();
+        }
+
+        function claimLine(type, r, c, player) {
+            if (type === 'h') {
+                if (hLines[r][c] !== 0) return -1;
+                hLines[r][c] = player;
+            } else {
+                if (vLines[r][c] !== 0) return -1;
+                vLines[r][c] = player;
+            }
+
+            let boxesCompleted = 0;
+
+            if (type === 'h') {
+                if (r > 0 && isBoxComplete(r - 1, c) && boxes[r - 1][c] === 0) {
+                    boxes[r - 1][c] = player;
+                    boxesCompleted++;
+                }
+                if (r < GRID_SIZE - 1 && isBoxComplete(r, c) && boxes[r][c] === 0) {
+                    boxes[r][c] = player;
+                    boxesCompleted++;
+                }
+            } else {
+                if (c > 0 && isBoxComplete(r, c - 1) && boxes[r][c - 1] === 0) {
+                    boxes[r][c - 1] = player;
+                    boxesCompleted++;
+                }
+                if (c < GRID_SIZE - 1 && isBoxComplete(r, c) && boxes[r][c] === 0) {
+                    boxes[r][c] = player;
+                    boxesCompleted++;
+                }
+            }
+
+            return boxesCompleted;
+        }
+
+        function isBoxComplete(r, c) {
+            return hLines[r][c] !== 0 &&
+                hLines[r + 1][c] !== 0 &&
+                vLines[r][c] !== 0 &&
+                vLines[r][c + 1] !== 0;
+        }
+
+        function checkGameOver() {
+            let totalBoxes = (GRID_SIZE - 1) * (GRID_SIZE - 1);
+            if (scores[1] + scores[2] === totalBoxes) {
+                gameActive = false;
+                if (cpuTimer) {
+                    clearTimeout(cpuTimer);
+                    cpuTimer = null;
+                }
+                updateStatus();
+                flashScreen();
+            }
+        }
+
+        function updateStatus() {
+            document.getElementById('score-p1').innerText = scores[1];
+            document.getElementById('score-p2').innerText = scores[2];
+
+            const turnEl = document.getElementById('turn-indicator');
+            if (!gameActive) {
+                if (scores[1] > scores[2]) turnEl.innerText = window.t ? window.t('2pdotsandboxes.win.p1') : "You Win!";
+                else if (scores[2] > scores[1]) turnEl.innerText = window.t ? window.t('2pdotsandboxes.win.p2') : "CPU Wins!";
+                else turnEl.innerText = window.t ? window.t('2pdotsandboxes.draw') : "It's a Draw!";
+            } else {
+                if (currentPlayer === HUMAN) {
+                    turnEl.innerText = window.t ? window.t('2pdotsandboxes.turn.p1') : "Your Turn";
+                } else {
+                    turnEl.innerText = window.t ? window.t('connect4.turn.p2') : "CPU Thinking...";
+                }
+            }
+        }
+
+        function scheduleCpuTurn() {
+            cpuTimer = setTimeout(function () {
+                runCpuTurn();
+            }, 700);
+        }
+
+        function runCpuTurn() {
+            if (!gameActive || currentPlayer !== CPU) return;
+
+            let extraTurn = true;
+            while (extraTurn && gameActive) {
+                const move = getCpuMove();
+                if (!move) break;
+
+                const boxesCompleted = claimLine(move.type, move.r, move.c, CPU);
+                if (boxesCompleted === -1) break;
+
+                if (boxesCompleted > 0) {
+                    scores[CPU] += boxesCompleted;
+                    checkGameOver();
+                    // CPU gets another turn if it completed a box and game is still active
+                    extraTurn = gameActive;
+                } else {
+                    extraTurn = false;
+                }
+            }
+
+            if (gameActive) {
+                currentPlayer = HUMAN;
+                updateStatus();
+                renderBoard();
+            }
+        }
+
+        // --- CPU AI ---
+        function getCpuMove() {
+            if (difficulty === 'easy') {
+                return getCpuMoveEasy();
+            }
+            return getCpuMoveHard();
+        }
+
+        function getAllMoves() {
+            const moves = [];
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE - 1; c++) {
+                    if (hLines[r][c] === 0) {
+                        moves.push({ type: 'h', r: r, c: c });
+                    }
+                }
+            }
+            for (let r = 0; r < GRID_SIZE - 1; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    if (vLines[r][c] === 0) {
+                        moves.push({ type: 'v', r: r, c: c });
+                    }
+                }
+            }
+            return moves;
+        }
+
+        function countBoxesCompletedByMove(move, player) {
+            let count = 0;
+            if (move.type === 'h') {
+                if (move.r > 0 && isBoxComplete(move.r - 1, move.c) && boxes[move.r - 1][move.c] === 0) count++;
+                if (move.r < GRID_SIZE - 1 && isBoxComplete(move.r, move.c) && boxes[move.r][move.c] === 0) count++;
+            } else {
+                if (move.c > 0 && isBoxComplete(move.r, move.c - 1) && boxes[move.r][move.c - 1] === 0) count++;
+                if (move.c < GRID_SIZE - 1 && isBoxComplete(move.r, move.c) && boxes[move.r][move.c] === 0) count++;
+            }
+            return count;
+        }
+
+        function getCpuMoveEasy() {
+            const moves = getAllMoves();
+            if (moves.length === 0) return null;
+
+            // 1. Take any completing box
+            for (let i = 0; i < moves.length; i++) {
+                if (countBoxesCompletedByMove(moves[i], CPU) > 0) return moves[i];
+            }
+            // 2. Random safe move
+            return moves[Math.floor(Math.random() * moves.length)];
+        }
+
+        function getCpuMoveHard() {
+            const moves = getAllMoves();
+            if (moves.length === 0) return null;
+
+            // 1. Take any completing boxes (greedy chains are handled by caller loop)
+            const completingMoves = [];
+            for (let i = 0; i < moves.length; i++) {
+                if (countBoxesCompletedByMove(moves[i], CPU) > 0) completingMoves.push(moves[i]);
+            }
+            if (completingMoves.length > 0) {
+                return completingMoves[Math.floor(Math.random() * completingMoves.length)];
+            }
+
+            // 2. Avoid giving opponent a box on their next turn
+            let safeMoves = [];
+            let riskyMoves = [];
+            for (let i = 0; i < moves.length; i++) {
+                const m = moves[i];
+                // Temporarily claim for CPU (but boxes already completed by this line are handled by count)
+                if (m.type === 'h') hLines[m.r][m.c] = CPU;
+                else vLines[m.r][m.c] = CPU;
+
+                let givesBox = false;
+                if (m.type === 'h') {
+                    if (m.r > 0) {
+                        const sides = countBoxSides(m.r - 1, m.c);
+                        if (sides === 3) givesBox = true;
+                    }
+                    if (m.r < GRID_SIZE - 1) {
+                        const sides = countBoxSides(m.r, m.c);
+                        if (sides === 3) givesBox = true;
+                    }
+                } else {
+                    if (m.c > 0) {
+                        const sides = countBoxSides(m.r, m.c - 1);
+                        if (sides === 3) givesBox = true;
+                    }
+                    if (m.c < GRID_SIZE - 1) {
+                        const sides = countBoxSides(m.r, m.c);
+                        if (sides === 3) givesBox = true;
+                    }
+                }
+
+                if (m.type === 'h') hLines[m.r][m.c] = 0;
+                else vLines[m.r][m.c] = 0;
+
+                if (givesBox) riskyMoves.push(m);
+                else safeMoves.push(m);
+            }
+
+            if (safeMoves.length > 0) {
+                // Prefer moves that set up a future box for us without giving one now
+                let bestSafeMoves = [];
+                let bestSetupScore = -1;
+                for (let i = 0; i < safeMoves.length; i++) {
+                    const setupScore = countSetupBoxes(safeMoves[i]);
+                    if (setupScore > bestSetupScore) {
+                        bestSetupScore = setupScore;
+                        bestSafeMoves = [safeMoves[i]];
+                    } else if (setupScore === bestSetupScore) {
+                        bestSafeMoves.push(safeMoves[i]);
+                    }
+                }
+                return bestSafeMoves[Math.floor(Math.random() * bestSafeMoves.length)];
+            }
+
+            // All moves are risky: choose the one that gives the fewest boxes (sacrifice)
+            if (riskyMoves.length > 0) {
+                let bestMoves = [];
+                let minBoxes = Infinity;
+                for (let i = 0; i < riskyMoves.length; i++) {
+                    const completed = countBoxesCompletedByMove(riskyMoves[i], CPU);
+                    if (completed < minBoxes) {
+                        minBoxes = completed;
+                        bestMoves = [riskyMoves[i]];
+                    } else if (completed === minBoxes) {
+                        bestMoves.push(riskyMoves[i]);
+                    }
+                }
+                return bestMoves[Math.floor(Math.random() * bestMoves.length)];
+            }
+
+            return moves[Math.floor(Math.random() * moves.length)];
+        }
+
+        function countBoxSides(r, c) {
+            let sides = 0;
+            if (hLines[r][c] !== 0) sides++;
+            if (hLines[r + 1][c] !== 0) sides++;
+            if (vLines[r][c] !== 0) sides++;
+            if (vLines[r][c + 1] !== 0) sides++;
+            return sides;
+        }
+
+        function countSetupBoxes(move) {
+            // Number of boxes this move brings to 2 sides (setup for future turn, no immediate give)
+            let setups = 0;
+            if (move.type === 'h') {
+                if (move.r > 0 && countBoxSides(move.r - 1, move.c) === 2) setups++;
+                if (move.r < GRID_SIZE - 1 && countBoxSides(move.r, move.c) === 2) setups++;
+            } else {
+                if (move.c > 0 && countBoxSides(move.r, move.c - 1) === 2) setups++;
+                if (move.c < GRID_SIZE - 1 && countBoxSides(move.r, move.c) === 2) setups++;
+            }
+            return setups;
+        }
+
+        function flashScreen() {
+            const content = document.querySelector('.window-content');
+            content.style.filter = "invert(1)";
+            setTimeout(function () {
+                content.style.filter = "invert(0)";
+            }, 300);
+        }
+
+    </script>
+</body>
+
+</html>

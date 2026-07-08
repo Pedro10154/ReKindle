@@ -366,8 +366,9 @@
                 <button class="sys-btn" onclick="cycleBots()" id="menu-bots-btn" style="width:200px;">Bots: 0</button>
                 <button class="sys-btn" onclick="cycleStacking()" id="menu-stack-btn" style="width:200px;">Stacking: Off</button>
             </div>
-            <button class="sys-btn" onclick="hostGame()">Host Game</button>
-            <button class="sys-btn" onclick="goHome()">Back</button>
+                <button class="sys-btn" onclick="hostGame()">Host Game</button>
+                <button class="sys-btn" onclick="startSinglePlayer()">Play Solo vs Bots</button>
+                <button class="sys-btn" onclick="goHome()">Back</button>
         </div>
         
         <div class="window-content" id="screen-loading" style="display:none; justify-content:center;">
@@ -491,6 +492,7 @@
         
         let botTimer = null;
         let afkTimer = null;
+        let singleModeAutoStart = false;
         const BOT_DELAY_MS = 1500;
         const AFK_TIMEOUT_MS = 30000;
         let serverTimeOffset = 0;
@@ -531,11 +533,22 @@
         function checkUrlForMatch() {
             const params = new URLSearchParams(window.location.search);
             const mId = params.get('matchId');
+            const single = params.get('single');
             if (mId) {
                 joinMatch(mId);
+            } else if (single === '1') {
+                singleModeAutoStart = true;
+                startSinglePlayer();
             } else {
                 showScreen('menu');
             }
+        }
+
+        function startSinglePlayer() {
+            localTotalPlayers = 4;
+            localBots = 3;
+            localStacking = false;
+            hostGame();
         }
         
         function showScreen(screen) {
@@ -884,6 +897,10 @@
                         showScreen('lobby');
                     }
                     updateLobbyUI();
+                    if (singleModeAutoStart && isHost) {
+                        singleModeAutoStart = false;
+                        forceStartGame();
+                    }
                 } else if (gameState.status === 'playing') {
                     if (document.getElementById('screen-game').style.display === 'none') {
                         showScreen('game');
@@ -1025,10 +1042,12 @@
             const turnPlayer = gameState.players[turnId] || {};
             const turnName = turnId === currentUser.uid ? "Your Turn!" : escapeHtml(turnPlayer.name) + "'s Turn";
             const turnStatusBar = document.getElementById('status-bar');
+            const directionArrow = (gameState.direction || 1) === 1 ? '→' : '←';
             turnStatusBar.innerHTML = `
                 <div class="status-bar-inner">
                     <canvas id="status-avatar" width="24" height="24" style="border:1px solid black; width:24px; height:24px; image-rendering:pixelated; background:white;"></canvas>
-                    ${turnName}
+                    <span>${turnName}</span>
+                    <span style="margin-left:10px; font-size:1.2rem;" title="Direction of play">${directionArrow}</span>
                 </div>
             `;
             turnStatusBar.style.background = myTurn ? '#000' : '#eee';

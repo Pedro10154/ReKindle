@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+    <meta charset="UTF-8">
+    <title>Uno</title>
+    <script src="js/i18n.js"></script>
+    <script src="theme.js?v=18"></script>
+    <script>
+        window.onload = function () {
+            if (window.rekindleApplyWallpaper) window.rekindleApplyWallpaper();
+        };
+    </script>
+    <style>
+        :root {
+            --shadow: 4px 4px 0px #000000;
+            --stripe-pattern: repeating-linear-gradient(0deg, transparent, transparent 2px, #000 3px, #000 4px);
+        }
+
+        * {
+            transition: none !important;
+            animation: none !important;
+        }
+
+        body {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #e5e5e5;
+            background-image: repeating-linear-gradient(45deg, #e5e5e5 25%, transparent 25%, transparent 75%, #e5e5e5 75%, #e5e5e5), repeating-linear-gradient(45deg, #e5e5e5 25%, white 25%, white 75%, #e5e5e5 75%, #e5e5e5);
+            background-position: 0 0, 2px 2px;
+            background-size: 4px 4px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            box-sizing: border-box;
+        }
+
+        .window {
+            background: white;
+            border: 2px solid black;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            min-height: fit-content;
+            width: 100%;
+            max-width: 500px;
+            position: relative;
+        }
+
+        .title-bar {
+            height: 35px;
+            border-bottom: 2px solid black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            padding: 0 10px;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .title-stripes {
+            position: absolute;
+            top: 4px;
+            bottom: 4px;
+            left: 4px;
+            right: 4px;
+            background-image: var(--stripe-pattern);
+            z-index: 0;
+        }
+
+        .title-text {
+            background: white;
+            padding: 0 15px;
+            font-weight: bold;
+            z-index: 1;
+            font-size: 1.1rem;
+            display: inline-flex;
+            align-items: center;
+            height: 100%;
+            box-sizing: border-box;
+        }
+
+        .close-box {
+            position: absolute;
+            left: 10px;
+            width: 18px;
+            height: 18px;
+            border: 2px solid black;
+            background: white;
+            z-index: 2;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-family: sans-serif;
+            font-size: 0.9rem;
+            line-height: 1;
+            box-shadow: 2px 2px 0 black;
+        }
+
+        .close-box:active {
+            background: black;
+            color: white;
+            transform: translate(1px, 1px);
+            box-shadow: none;
+        }
+
+        .window-content {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: white;
+            overflow-y: auto;
+        }
+
+        .uno-icon {
+            width: 80px;
+            height: 110px;
+            border: 2px solid black;
+            border-radius: 5px;
+            margin: 20px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 3px 3px 0 black;
+            background: repeating-linear-gradient(45deg, #000, #000 2px, transparent 2px, transparent 6px), repeating-linear-gradient(-45deg, #000, #000 2px, #fff 2px, #fff 6px);
+            background-color: white;
+        }
+
+        .uno-icon-inner {
+            width: 60px;
+            height: 60px;
+            border: 2px solid black;
+            border-radius: 50%;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            font-size: 1.5rem;
+            color: black;
+        }
+
+        .menu-text {
+            text-align: center;
+            margin-bottom: 20px;
+            font-weight: bold;
+            font-size: 1rem;
+        }
+
+        .controls {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .controls > * + * {
+            margin-top: 15px;
+        }
+
+        .sys-btn {
+            background: white;
+            border: 2px solid black;
+            padding: 12px 20px;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            box-shadow: 3px 3px 0 black;
+            text-transform: uppercase;
+            width: 80%;
+            max-width: 280px;
+        }
+
+        .sys-btn:active {
+            background: black;
+            color: white;
+            transform: translate(2px, 2px);
+            box-shadow: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="window">
+        <div class="title-bar">
+            <div class="title-stripes"></div>
+            <div class="close-box" onclick="window.location.href='index'">X</div>
+            <span class="title-text">Uno</span>
+        </div>
+
+        <div class="window-content">
+            <div class="uno-icon">
+                <div class="uno-icon-inner">UNO</div>
+            </div>
+            <div class="menu-text">
+                Play a solo match against bot opponents, or join an online lobby with friends.
+            </div>
+            <div class="controls">
+                <button class="sys-btn" onclick="window.location.href='liveuno.html?single=1'">Play Solo vs Bots</button>
+                <button class="sys-btn" onclick="window.location.href='liveuno.html'">Play Online</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -428,6 +428,13 @@
         }
         function hideModal() { document.getElementById('modal-overlay').style.display = 'none'; }
 
+        function interpolate(str, vars) {
+            if (!str) return str;
+            return str.replace(/\$\{(\w+)\}/g, function(match, key) {
+                return vars[key] !== undefined ? vars[key] : match;
+            });
+        }
+
         // --- CONFIG ---
         const BOARD_SIZE = 10;
         const SHIPS = [
@@ -519,7 +526,8 @@
                 renderGameBoard();
                 showScreen('game-screen');
                 const pNum = state.turn + 1;
-                document.getElementById('game-msg').innerText = window.t ? window.t('battleship.turn.msg', { num: pNum }) : `Player ${pNum}'s Turn`;
+                const turnTemplate = window.t ? window.t('battleship.turn.msg') : "Player ${num}'s Turn";
+                document.getElementById('game-msg').innerText = interpolate(turnTemplate, { num: pNum });
                 renderFleetStatus();
             }
         }
@@ -530,7 +538,8 @@
             const pKey = state.turn === 0 ? "battleship.setup.p1" : "battleship.setup.p2";
             const pName = window.t ? window.t(pKey) : (state.turn === 0 ? "P1" : "P2");
             const shipName = window.t ? window.t('battleship.ship.' + shipDef.name.toLowerCase()) : shipDef.name;
-            document.getElementById('setup-msg').innerText = window.t ? window.t('battleship.setup.msg', { pName: pName, ship: shipName, size: shipDef.size }) : `${pName}: Place ${shipDef.name} (${shipDef.size})`;
+            const setupTemplate = window.t ? window.t('battleship.setup.msg') : '${pName}: Place ${ship} (${size})';
+            document.getElementById('setup-msg').innerText = interpolate(setupTemplate, { pName: pName, ship: shipName, size: shipDef.size });
         }
 
         function rotateShip() {
@@ -680,7 +689,8 @@
                 // Simple win check
                 if (checkWin(enemy)) {
                     setTimeout(() => {
-                        const winMsg = window.t ? window.t('battleship.msg.win', { num: state.turn + 1 }) : `Player ${state.turn + 1} Wins!`;
+                        const winTemplate = window.t ? window.t('battleship.msg.win') : 'Player ${num} Wins!';
+                        const winMsg = interpolate(winTemplate, { num: state.turn + 1 });
                         showModal(winMsg);
                         location.reload();
                     }, 500);

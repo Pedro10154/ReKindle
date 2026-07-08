@@ -1,0 +1,499 @@
+<!DOCTYPE html><html lang="en"><head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+    <meta charset="UTF-8">
+    
+    <title>Tic-Tac-Toe</title>
+    <style>
+        /* SYSTEM 7 AESTHETICS */
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --border: 2px solid #000000;
+            --shadow: 4px 4px 0px #000000;
+            --stripe-pattern: repeating-linear-gradient(0deg, transparent, transparent 2px, #000 3px, #000 4px);
+        }
+
+        * {
+            transition: none !important;
+            animation: none !important;
+        }
+
+        body {
+            image-rendering: -webkit-crisp-edges;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -o-crisp-edges;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            -ms-interpolation-mode: nearest-neighbor;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #e5e5e5;
+
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            box-sizing: border-box;
+        }
+
+        /* WINDOW FRAME */
+        .window {
+            background: white;
+            border: 2px solid black;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            min-height: fit-content;
+            width: 100%;
+            max-width: 500px;
+            position: relative;
+        }
+
+        /* TITLE BAR */
+        .title-bar {
+            height: 35px;
+            border-bottom: 2px solid black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            padding: 0 10px;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .title-stripes {
+            position: absolute;
+            top: 4px;
+            bottom: 4px;
+            left: 4px;
+            right: 4px;
+            background-image: var(--stripe-pattern);
+            z-index: 0;
+        }
+
+        .title-text {
+            background: white;
+            padding: 0 15px;
+            font-weight: bold;
+            z-index: 1;
+            font-size: 1.1rem;
+            display: inline-flex;
+            align-items: center;
+            height: 100%;
+            box-sizing: border-box;
+        }
+
+        .close-box {
+            position: absolute;
+            left: 10px;
+            width: 18px;
+            height: 18px;
+            border: 2px solid black;
+            background: white;
+            z-index: 2;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-family: sans-serif;
+            font-size: 0.9rem;
+            line-height: 1;
+            box-shadow: 2px 2px 0 black;
+        }
+
+        .close-box:active {
+            background: black;
+            color: white;
+            transform: translate(1px, 1px);
+            box-shadow: none;
+        }
+
+        /* CONTENT AREA */
+        .window-content {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: white;
+            overflow-y: auto;
+        }
+
+        /* STATUS BAR */
+        #status-bar {
+            width: 100%;
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.1rem;
+            border: 2px solid black;
+            padding: 10px 0;
+            margin-bottom: 20px;
+            background: #eee;
+            font-family: "Courier New", monospace;
+        }
+
+        /* BOARD */
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 5px;
+            width: 100%;
+            max-width: 380px;
+            margin-bottom: 20px;
+        }
+
+        .cell {
+            background: white;
+            border: 3px solid black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+            font-weight: 900;
+            cursor: pointer;
+            line-height: 1;
+            box-shadow: 2px 2px 0 #ccc;
+        }
+
+        .cell.x {
+            color: black;
+        }
+
+        .cell.o {
+            color: black;
+            -webkit-text-stroke: 2px black;
+            color: transparent;
+        }
+
+        .cell.winner {
+            background: black;
+            color: white;
+            -webkit-text-stroke: 0;
+            border-color: black;
+        }
+
+        .cell:disabled, .cell.disabled {
+            cursor: default;
+        }
+
+        /* CONTROLS */
+        .controls {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+        .controls > * + * {
+            margin-left: 10px;
+        }
+
+        .sys-btn {
+            background: white;
+            border: 2px solid black;
+            padding: 8px 15px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            cursor: pointer;
+            box-shadow: 3px 3px 0 black;
+            text-transform: uppercase;
+            flex: 1;
+        }
+
+        .sys-btn.active {
+            background: black;
+            color: white;
+            box-shadow: none;
+            transform: translate(1px, 1px);
+        }
+
+        .sys-btn:active {
+            background: black;
+            color: white;
+            transform: translate(2px, 2px);
+            box-shadow: none;
+        }
+    </style>
+    <script src="js/i18n.js"></script>
+    <script src="theme.js?v=18"></script>
+</head>
+
+<body>
+
+    <div class="window">
+        <div class="title-bar">
+            <div class="title-stripes"></div>
+            <div class="close-box" onclick="window.location.href='index'" data-i18n="battleship.btn.close">X</div>
+            <span class="title-text" data-i18n="tictactoe.title">Tic-Tac-Toe</span>
+        </div>
+
+        <div class="window-content">
+            <div id="status-bar" data-i18n="tictactoe.status.select_mode">Select Mode</div>
+
+            <div id="game-container" style="width:100%; display:flex; justify-content:center;"></div>
+
+            <div class="controls">
+                <button class="sys-btn" id="btn-easy" onclick="setDifficulty('easy')" data-i18n="tictactoe.difficulty.easy">Easy</button>
+                <button class="sys-btn" id="btn-hard" onclick="setDifficulty('hard')" data-i18n="tictactoe.difficulty.hard">Hard</button>
+                <button class="sys-btn" onclick="resetGame()" data-i18n="tictactoe.btn.reset">Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIG ---
+        const WINNING_COMBOS = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8], // Rows
+            [0, 3, 6], [1, 4, 7], [2, 5, 8], // Cols
+            [0, 4, 8], [2, 4, 6]             // Diagonals
+        ];
+
+        const HUMAN = 'X';
+        const CPU = 'O';
+
+        // --- STATE ---
+        let difficulty = 'hard';
+        let currentPlayer = HUMAN;
+        let gameActive = true;
+        let board = Array(9).fill(null);
+        let cpuTimer = null;
+
+        // --- INIT ---
+        window.onload = function () {
+            if (window.rekindleApplyWallpaper) window.rekindleApplyWallpaper();
+            setDifficulty('hard');
+            window.addEventListener('resize', resizeBoard);
+        };
+
+        function resizeBoard() {
+            const boardEl = document.getElementById('game-board');
+            if (boardEl) {
+                boardEl.style.height = boardEl.offsetWidth + 'px';
+            }
+        }
+
+        function setDifficulty(level) {
+            difficulty = level;
+            document.querySelectorAll('.sys-btn').forEach(function (b) { b.classList.remove('active'); });
+            document.getElementById('btn-' + level).classList.add('active');
+            resetGame();
+        }
+
+        function resetGame() {
+            currentPlayer = HUMAN;
+            gameActive = true;
+            board = Array(9).fill(null);
+            if (cpuTimer) {
+                clearTimeout(cpuTimer);
+                cpuTimer = null;
+            }
+            document.getElementById('status-bar').innerText = window.t ? window.t('tictactoe.turn.x') : "Your Turn (X)";
+            renderBoard();
+            resizeBoard();
+        }
+
+        // --- RENDER ---
+        function renderBoard() {
+            const container = document.getElementById('game-container');
+            container.innerHTML = '<div class="board" id="game-board"></div>';
+            const boardEl = document.getElementById('game-board');
+
+            for (let i = 0; i < 9; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                if (board[i]) {
+                    cell.innerText = board[i];
+                    cell.classList.add(board[i].toLowerCase());
+                    if (!gameActive) cell.classList.add('disabled');
+                } else if (!gameActive || currentPlayer !== HUMAN) {
+                    cell.classList.add('disabled');
+                }
+                cell.onclick = function () { handleMove(i); };
+                boardEl.appendChild(cell);
+            }
+            // Set height immediately to avoid vertical collapse/glitch
+            boardEl.style.height = boardEl.offsetWidth + 'px';
+            resizeBoard();
+        }
+
+        // --- GAME LOGIC ---
+        function handleMove(index) {
+            if (!gameActive || currentPlayer !== HUMAN || board[index]) return;
+
+            makeMove(index, HUMAN);
+
+            const winLine = checkWin(board);
+            if (winLine) {
+                endGame(HUMAN, winLine);
+                return;
+            }
+            if (isDraw(board)) {
+                endGame('draw', null);
+                return;
+            }
+
+            currentPlayer = CPU;
+            document.getElementById('status-bar').innerText = window.t ? window.t('tictactoe.turn.o') : "CPU Thinking...";
+            renderBoard();
+
+            cpuTimer = setTimeout(function () {
+                const cpuMove = getCpuMove();
+                if (cpuMove !== -1) {
+                    makeMove(cpuMove, CPU);
+                    const cpuWinLine = checkWin(board);
+                    if (cpuWinLine) {
+                        endGame(CPU, cpuWinLine);
+                        return;
+                    }
+                    if (isDraw(board)) {
+                        endGame('draw', null);
+                        return;
+                    }
+                    currentPlayer = HUMAN;
+                    document.getElementById('status-bar').innerText = window.t ? window.t('tictactoe.turn.x') : "Your Turn (X)";
+                    renderBoard();
+                }
+            }, 600);
+        }
+
+        function makeMove(index, player) {
+            board[index] = player;
+        }
+
+        function endGame(winner, winLine) {
+            gameActive = false;
+            if (cpuTimer) {
+                clearTimeout(cpuTimer);
+                cpuTimer = null;
+            }
+            if (winner === 'draw') {
+                document.getElementById('status-bar').innerText = window.t ? window.t('tictactoe.msg.draw') : "Draw!";
+            } else if (winner === HUMAN) {
+                document.getElementById('status-bar').innerText = window.t ? window.t('tictactoe.msg.win', { player: HUMAN }) : "You Win!";
+                highlightWin(winLine);
+            } else {
+                document.getElementById('status-bar').innerText = window.t ? window.t('tictactoe.msg.lose', { player: CPU }) : "CPU Wins!";
+                highlightWin(winLine);
+            }
+            renderBoard();
+            flashScreen();
+        }
+
+        function highlightWin(indices) {
+            const cells = document.querySelectorAll('.cell');
+            indices.forEach(function (idx) {
+                cells[idx].classList.add('winner');
+            });
+        }
+
+        // --- CPU AI ---
+        function getCpuMove() {
+            if (difficulty === 'easy') {
+                return getRandomMove();
+            }
+            return getBestMove();
+        }
+
+        function getRandomMove() {
+            const available = [];
+            for (let i = 0; i < 9; i++) {
+                if (!board[i]) available.push(i);
+            }
+            if (available.length === 0) return -1;
+            return available[Math.floor(Math.random() * available.length)];
+        }
+
+        function getBestMove() {
+            let bestScore = -Infinity;
+            let move = -1;
+            for (let i = 0; i < 9; i++) {
+                if (!board[i]) {
+                    board[i] = CPU;
+                    const score = minimax(board, 0, false);
+                    board[i] = null;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        move = i;
+                    }
+                }
+            }
+            return move;
+        }
+
+        function minimax(currentBoard, depth, isMaximizing) {
+            const winLine = checkWin(currentBoard);
+            if (winLine) {
+                return currentBoard[winLine[0]] === CPU ? 10 - depth : depth - 10;
+            }
+            if (isDraw(currentBoard)) {
+                return 0;
+            }
+
+            if (isMaximizing) {
+                let bestScore = -Infinity;
+                for (let i = 0; i < 9; i++) {
+                    if (!currentBoard[i]) {
+                        currentBoard[i] = CPU;
+                        const score = minimax(currentBoard, depth + 1, false);
+                        currentBoard[i] = null;
+                        bestScore = Math.max(score, bestScore);
+                    }
+                }
+                return bestScore;
+            } else {
+                let bestScore = Infinity;
+                for (let i = 0; i < 9; i++) {
+                    if (!currentBoard[i]) {
+                        currentBoard[i] = HUMAN;
+                        const score = minimax(currentBoard, depth + 1, true);
+                        currentBoard[i] = null;
+                        bestScore = Math.min(score, bestScore);
+                    }
+                }
+                return bestScore;
+            }
+        }
+
+        // --- SHARED UTILS ---
+        function checkWin(boardArr) {
+            for (let i = 0; i < WINNING_COMBOS.length; i++) {
+                const combo = WINNING_COMBOS[i];
+                const a = combo[0], b = combo[1], c = combo[2];
+                if (boardArr[a] && boardArr[a] === boardArr[b] && boardArr[a] === boardArr[c]) {
+                    return combo;
+                }
+            }
+            return null;
+        }
+
+        function isDraw(boardArr) {
+            for (let i = 0; i < 9; i++) {
+                if (!boardArr[i]) return false;
+            }
+            return true;
+        }
+
+        function flashScreen() {
+            const content = document.querySelector('.window-content');
+            content.style.filter = "invert(1)";
+            setTimeout(function () {
+                content.style.filter = "invert(0)";
+            }, 300);
+        }
+
+    </script>
+
+    <script>
+
+
+
+
+    </script>
+    <script src="https://cdn.counter.dev/script.js" data-id="4e551911-0e5d-4c48-91a6-b828c3301675" data-utcoffset="11"></script>
+
+
+</body></html>
