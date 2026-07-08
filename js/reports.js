@@ -2,11 +2,11 @@
  * REKINDLE REPORTS - Shared reporting module for social apps
  * 
  * Provides a System 7-styled report modal that can be triggered from
- * any social app (KindleChat, Neighbourhood, Topics).
+ * any social app (KindleChat, Neighbourhood, Topics, Suggestions).
  * 
  * Usage:
  *   rekindleOpenReportModal({
- *     contentType: 'kindlechat|topic|topic_comment|neighbourhood_post|neighbourhood_comment',
+ *     contentType: 'kindlechat|topic|topic_comment|neighbourhood_post|neighbourhood_comment|suggestion|suggestion_comment',
  *     contentId: 'message-key-or-doc-id',
  *     contentPath: 'kindlechat/messages/xxx',
  *     reportedUserId: 'uid-of-content-author',
@@ -235,7 +235,7 @@
 
         var warningEl = document.createElement('div');
         warningEl.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;padding:8px;margin-top:10px;font-size:0.75rem;color:#856404;';
-        warningEl.innerHTML = '<strong>Warning:</strong> Misuse of the report system will lead to a permanent ban. KindleChat messages, comments and replies are removed immediately when reported. Topics and posts require 2 reports from different users before they are automatically deleted.';
+        warningEl.innerHTML = '<strong>Warning:</strong> Misuse of the report system will lead to a permanent ban. KindleChat messages, suggestion comments, topic comments and neighbourhood comments are removed immediately when reported. Suggestions, topics and neighbourhood posts require 2 reports from different users before they are automatically deleted.';
         body.appendChild(warningEl);
 
         var errorEl = document.createElement('div');

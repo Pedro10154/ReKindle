@@ -45,6 +45,15 @@
                         }
                     }
                 }
+            },
+            "art_index": {
+                ".read": "auth != null && (auth.token.ageVerified == true || auth.token.email === 'ukiyo@rekindle.ink')",
+                ".write": "auth.token.email === 'ukiyo@rekindle.ink' || auth.token.email.matches(/^.*@rekindle-socials\\.iam\\.gserviceaccount\\.com$/)",
+                ".indexOn": ["timestamp"],
+                "$messageId": {
+                    ".write": "auth.token.email === 'ukiyo@rekindle.ink' || auth.token.email.matches(/^.*@rekindle-socials\\.iam\\.gserviceaccount\\.com$/) || (auth != null && auth.token.ageVerified == true && root.child('kindlechat/messages/' + $messageId + '/uid').val() === auth.uid && !newData.exists())",
+                    ".validate": "newData.hasChildren(['uid', 'type', 'timestamp', 'thumbnail']) && (newData.child('type').val() === 'pixel_art' || newData.child('type').val() === 'flipbook') && newData.child('thumbnail').isString() && newData.child('text').isString()"
+                }
             }
         },
         "reports": {

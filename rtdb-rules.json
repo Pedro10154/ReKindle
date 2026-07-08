@@ -134,7 +134,7 @@
             ".read": true,
             ".indexOn": ["createdAt", "authorUid", "type", "status"],
             "$suggestionId": {
-                ".write": "auth != null && ((!data.exists() && newData.child('authorUid').val() == auth.uid) || (data.exists() && auth.token.email == 'ukiyo@rekindle.ink'))",
+                ".write": "auth != null && ((!data.exists() && newData.child('authorUid').val() == auth.uid) || (data.exists() && (auth.token.email == 'ukiyo@rekindle.ink' || auth.token.email.matches(/^.*@rekindle-socials\\.iam\\.gserviceaccount\\.com$/))))",
                 ".validate": "newData.hasChildren(['title', 'description', 'authorUid', 'authorName', 'createdAt'])",
                 "title": {
                     ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 1000"
@@ -177,7 +177,7 @@
                 },
                 "comments": {
                     "$commentId": {
-                        ".write": "auth != null && ((!data.exists() && newData.child('authorUid').val() == auth.uid && ($commentId == auth.uid + '_1' || $commentId == auth.uid + '_2' || $commentId == auth.uid + '_3')) || (data.exists() && auth.token.email == 'ukiyo@rekindle.ink'))",
+                        ".write": "auth != null && ((!data.exists() && newData.child('authorUid').val() == auth.uid && ($commentId == auth.uid + '_1' || $commentId == auth.uid + '_2' || $commentId == auth.uid + '_3')) || (data.exists() && (auth.token.email == 'ukiyo@rekindle.ink' || auth.token.email.matches(/^.*@rekindle-socials\\.iam\\.gserviceaccount\\.com$/))))",
                         ".validate": "newData.hasChildren(['text', 'authorUid', 'createdAt'])",
                         "text": {
                             ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 1000"

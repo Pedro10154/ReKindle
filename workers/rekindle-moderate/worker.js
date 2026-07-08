@@ -7,6 +7,8 @@
  * - topic comments (Firestore)
  * - neighbourhood posts (Firestore)
  * - neighbourhood comments (Firestore)
+ * - suggestions (Primary RTDB)
+ * - suggestion comments (Primary RTDB)
  *
  * Authenticates users via Firebase ID token, calls OpenAI Moderation,
  * then writes to Firebase using a service account (bypasses security rules).
@@ -203,6 +205,22 @@ async function rtdbPushWithAccessToken(path, data, accessToken) {
     return await resp.json();
 }
 
+async function rtdbSetWithAccessToken(path, data, accessToken) {
+    const url = `https://rekindle-socials-default-rtdb.firebaseio.com/${path}.json?access_token=${encodeURIComponent(accessToken)}`;
+    console.log("[WORKER] rtdbSetWithAccessToken URL:", url.replace(/access_token=([^&]+)/, "access_token=<REDACTED>"));
+    const resp = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+    });
+    if (!resp.ok) {
+        const errText = await resp.text();
+        console.error("[WORKER] rtdbSetWithAccessToken failed:", resp.status, errText);
+        throw new Error(`RTDB set failed (${resp.status}): ${errText}`);
+    }
+    return await resp.json();
+}
+
 async function rtdbPushWithAccessTokenAndReturnKey(path, data, accessToken) {
     const result = await rtdbPushWithAccessToken(path, data, accessToken);
     return result.name;
@@ -236,6 +254,15 @@ async function rtdbDeleteWithAccessToken(path, accessToken) {
     if (!resp.ok && resp.status !== 404) {
         const errText = await resp.text();
         throw new Error(`RTDB delete failed (${resp.status}): ${errText}`);
+    }
+}
+
+async function rtdbDeletePrimaryWithAccessToken(path, accessToken) {
+    const url = `https://rekindle-dd1fa-default-rtdb.firebaseio.com/${path}.json?access_token=${encodeURIComponent(accessToken)}`;
+    const resp = await fetch(url, { method: "DELETE" });
+    if (!resp.ok && resp.status !== 404) {
+        const errText = await resp.text();
+        throw new Error(`Primary RTDB delete failed (${resp.status}): ${errText}`);
     }
 }
 
@@ -294,6 +321,8 @@ async function autoDeleteContent(contentType, contentId, contentPath, accessToke
     try {
         if (contentType === "kindlechat") {
             await rtdbDeleteWithAccessToken(`kindlechat/messages/${contentId}`, accessToken);
+            // Also remove from the art index if this message was pixel art or a flipbook.
+            await rtdbDeleteWithAccessToken(`kindlechat/art_index/${contentId}`, accessToken).catch(e => console.error("[AUTO-DELETE] art_index delete failed:", e.message));
             console.log(`[AUTO-DELETE] Deleted kindlechat message ${contentId}`);
             return true;
         }
@@ -318,6 +347,18 @@ async function autoDeleteContent(contentType, contentId, contentPath, accessToke
             // contentPath is like "neighbourhood_posts/{postId}/comments/{commentId}"
             await firestoreDelete(contentPath, accessToken);
             console.log(`[AUTO-DELETE] Deleted neighbourhood comment ${contentId}`);
+            return true;
+        }
+        if (contentType === "suggestion") {
+            // Suggestions live in the primary RTDB project
+            await rtdbDeletePrimaryWithAccessToken(`suggestions/${contentId}`, accessToken);
+            console.log(`[AUTO-DELETE] Deleted suggestion ${contentId}`);
+            return true;
+        }
+        if (contentType === "suggestion_comment") {
+            // contentPath is like "suggestions/{suggestionId}/comments/{commentKey}"
+            await rtdbDeletePrimaryWithAccessToken(contentPath, accessToken);
+            console.log(`[AUTO-DELETE] Deleted suggestion comment ${contentId}`);
             return true;
         }
         return false;
@@ -1158,6 +1199,8 @@ function getContentPath(contentType, contentId) {
     if (contentType === "topic_comment") return `topics/${contentId}`;
     if (contentType === "neighbourhood_post") return `neighbourhood_posts/${contentId}`;
     if (contentType === "neighbourhood_comment") return `neighbourhood_posts/${contentId}`;
+    if (contentType === "suggestion") return `suggestions/${contentId}`;
+    if (contentType === "suggestion_comment") return `suggestions/${contentId}`;
     return "";
 }
 
@@ -1300,6 +1343,19 @@ export default {
 
                 console.log("[WORKER] kindlechat post — token claims:", { email: payload.email, ageVerified: payload.ageVerified, moderator: payload.moderator, aud: payload.aud });
                 const result = await rtdbPushWithAccessToken("kindlechat/messages", msgData, accessToken);
+
+                // Maintain a lightweight art index so the KindleChat gallery can load only art posts.
+                if (isFlipnote || isPixelArt) {
+                    const thumbnail = isPixelArt ? (body.pixel_art || null) : (isFlipnote && body.flipnote_data && body.flipnote_data.frames && body.flipnote_data.frames.length > 0 ? body.flipnote_data.frames[0] : null);
+                    const artIndexEntry = {
+                        uid,
+                        type: isPixelArt ? "pixel_art" : "flipbook",
+                        timestamp: { ".sv": "timestamp" },
+                        thumbnail,
+                        text: trimmed || ""
+                    };
+                    await rtdbSetWithAccessToken(`kindlechat/art_index/${result.name}`, artIndexEntry, accessToken).catch(e => console.error("[WORKER] art_index write failed:", e.message));
+                }
 
                 // Record this text for duplicate detection (non-blocking)
                 if (trimmed) {
@@ -1574,15 +1630,15 @@ export default {
                     return new Response(JSON.stringify({ error: "Missing required report fields." }), { status: 400, headers });
                 }
                 
-                const validContentTypes = ["kindlechat", "topic", "topic_comment", "neighbourhood_post", "neighbourhood_comment"];
+                const validContentTypes = ["kindlechat", "topic", "topic_comment", "neighbourhood_post", "neighbourhood_comment", "suggestion", "suggestion_comment"];
                 if (!validContentTypes.includes(contentType)) {
                     return new Response(JSON.stringify({ error: "Invalid content type." }), { status: 400, headers });
                 }
                 
                 // Content removed on the first report
-                const IMMEDIATE_DELETE_TYPES = ["kindlechat", "topic_comment", "neighbourhood_comment"];
+                const IMMEDIATE_DELETE_TYPES = ["kindlechat", "topic_comment", "neighbourhood_comment", "suggestion_comment"];
                 // Content that requires two reports from different users
-                const TWO_REPORT_DELETE_TYPES = ["topic", "neighbourhood_post"];
+                const TWO_REPORT_DELETE_TYPES = ["topic", "neighbourhood_post", "suggestion"];
                 const shouldDeleteImmediately = IMMEDIATE_DELETE_TYPES.includes(contentType);
                 
                 // Validate lengths

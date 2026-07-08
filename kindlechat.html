@@ -189,8 +189,10 @@
         /* MAIN LAYOUT */
         #app-layout {
             display: flex;
+            flex-direction: column;
             flex-grow: 1;
             overflow: hidden;
+            min-height: 0;
         }
 
         /* CHAT VIEW */
@@ -200,25 +202,181 @@
             flex-direction: column;
             background: white;
             position: relative;
-            min-width: 0;
+            min-height: 0;
         }
 
         /* ROOM HEADER */
         .room-header {
             border-bottom: 2px solid black;
-            padding: 8px 15px;
+            padding: 0;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            align-items: stretch;
             background: #eee;
             font-size: 0.9rem;
             flex-shrink: 0;
             position: relative;
         }
 
-        .current-room {
+        .room-tab {
+            flex: 1;
+            padding: 8px 15px;
+            text-align: center;
             font-weight: bold;
             text-transform: uppercase;
+            cursor: pointer;
+            background: white;
+            color: black;
+            border: none;
+            border-right: 2px solid black;
+            font-family: inherit;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+        }
+
+        .room-tab:last-child {
+            border-right: none;
+        }
+
+        .room-tab.active {
+            background: black;
+            color: white;
+        }
+
+        .gallery-toggle-btn {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border: 2px solid black;
+            background: white;
+            cursor: pointer;
+            box-shadow: 2px 2px 0 black;
+            font-family: inherit;
+            font-weight: bold;
+        }
+
+        .gallery-toggle-btn:active {
+            background: black;
+            color: white;
+            box-shadow: none;
+            transform: translate(2px, 2px);
+        }
+
+        /* GALLERY VIEW */
+        #gallery-view {
+            flex-grow: 1;
+            display: none;
+            flex-direction: column;
+            background: white;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        #gallery-view.active {
+            display: flex;
+        }
+
+        #gallery-view.hidden {
+            display: none !important;
+        }
+
+        .gallery-body {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+            gap: 15px;
+        }
+
+        .gallery-item {
+            border: 2px solid black;
+            padding: 12px;
+            background: white;
+            box-shadow: 2px 2px 0 #ccc;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .gallery-item:active {
+            box-shadow: none;
+            transform: translate(2px, 2px);
+        }
+
+        .gallery-thumb {
+            width: 256px;
+            height: 256px;
+            border: 2px solid black;
+            background: white;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            object-fit: contain;
+            display: block;
+        }
+
+        .gallery-info {
+            width: 100%;
+            margin-top: 6px;
+            font-size: 0.75rem;
+            color: #333;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            text-align: center;
+        }
+
+        .gallery-author {
+            font-weight: bold;
+        }
+
+        .gallery-type {
+            display: inline-block;
+            border: 1px solid black;
+            padding: 1px 4px;
+            font-size: 0.6rem;
+            font-weight: bold;
+            margin-left: 5px;
+            background: white;
+        }
+
+        .gallery-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+
+        .gallery-load-more {
+            text-align: center;
+            padding: 15px;
+        }
+
+        .gallery-load-more button {
+            font-size: 0.85rem;
+            padding: 6px 16px;
+            border: 2px solid black;
+            background: white;
+            cursor: pointer;
+            box-shadow: 2px 2px 0 black;
+            font-family: inherit;
+            font-weight: bold;
+        }
+
+        .gallery-load-more button:active {
+            background: black;
+            color: white;
+            box-shadow: none;
+            transform: translate(2px, 2px);
+        }
+
+        .gallery-load-more button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         /* CHAT HISTORY */
@@ -1091,11 +1249,12 @@
         </div>
 
         <div id="app-layout">
+            <div class="room-header">
+                <div id="chat-tab" class="room-tab active" onclick="switchKindlechatTab('chat')" data-i18n="kindlechat.tab.chat">KindleChat</div>
+                <div id="gallery-tab" class="room-tab" onclick="switchKindlechatTab('gallery')" data-i18n="kindlechat.tab.gallery">Gallery</div>
+            </div>
 
             <div id="chat-view">
-                <div class="room-header">
-                    <span class="current-room" id="room-title">All of KindleChat</span>
-                </div>
 
                 <div id="chat-history">
                 </div>
@@ -1142,6 +1301,16 @@
 
                 <div id="locked-input" data-i18n="kindlechat.guest_hint">
                     Log in on the home screen to send messages.
+                </div>
+            </div>
+
+            <div id="gallery-view">
+                <div id="gallery-body" class="gallery-body">
+                    <div id="gallery-grid" class="gallery-grid">
+                    </div>
+                    <div id="gallery-load-more" class="gallery-load-more" style="display:none;">
+                        <button id="gallery-load-more-btn" onclick="loadMoreGallery()" data-i18n="kindlechat.gallery.load_more">Load Older</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1330,7 +1499,12 @@
             }
             overlay.style.display = 'flex';
         }
-        function hideModal() { document.getElementById('modal-overlay').style.display = 'none'; }
+        function hideModal() {
+            var overlay = document.getElementById('modal-overlay');
+            if (overlay) overlay.style.display = 'none';
+            var generic = document.getElementById('generic-modal-content');
+            if (generic) generic.style.padding = '';
+        }
 
         firebase.initializeApp(firebaseConfig);
         var socialApp = firebase.initializeApp(socialConfig, 'social');
@@ -1344,6 +1518,7 @@
         var socialRtdb = socialApp.database();
         var socialAuth = socialApp.auth();
         var generalChatRef = socialRtdb.ref('kindlechat/messages');
+        var artIndexRef = socialRtdb.ref('kindlechat/art_index');
         var generalListener = null;
 
         // --- STATE ---
@@ -1377,6 +1552,15 @@
         var kcTransChangedHandler = null; // translations child_changed handler
         var langTranslations = {};        // Cache for per-language translations from new RTDB path
         var replyTarget = null;           // Active reply target for message input
+        var galleryState = {
+            open: false,
+            items: [],
+            oldestTimestamp: null,
+            loading: false,
+            noMore: false,
+            batchSize: 200
+        };
+        var galleryRemovedHandler = null; // child_removed listener for art_index
 
         function markAllAsRead() {
             // No-op: only general chat remains, no sidebar/unread tracking needed.
@@ -1917,11 +2101,9 @@
         function showLoadingIndicator() {
             if (document.getElementById('load-more-indicator')) return;
             var chatView = document.getElementById('chat-view');
-            var roomHeader = chatView ? chatView.querySelector('.room-header') : null;
-            var headerHeight = roomHeader ? roomHeader.offsetHeight : 0;
             var el = document.createElement('div');
             el.id = 'load-more-indicator';
-            el.style.cssText = 'position:absolute;top:' + headerHeight + 'px;left:0;right:0;z-index:10;background:#eee;border-bottom:1px solid black;padding:6px;text-align:center;font-size:0.85rem;';
+            el.style.cssText = 'position:absolute;top:0;left:0;right:0;z-index:10;background:#eee;border-bottom:1px solid black;padding:6px;text-align:center;font-size:0.85rem;';
             el.textContent = 'Loading older messages...';
             if (chatView) chatView.appendChild(el);
         }
@@ -2295,6 +2477,432 @@
             });
         }
 
+        function switchKindlechatTab(tab) {
+            if (tab !== 'chat' && tab !== 'gallery') return;
+            if (tab === 'gallery' && !galleryState.open) {
+                openGalleryView();
+            } else if (tab === 'chat' && galleryState.open) {
+                closeGalleryView();
+            }
+        }
+
+        function openGalleryView() {
+            var galleryView = document.getElementById('gallery-view');
+            var chatView = document.getElementById('chat-view');
+            var chatTab = document.getElementById('chat-tab');
+            var galleryTab = document.getElementById('gallery-tab');
+            if (!galleryView || !chatView) return;
+
+            galleryView.classList.add('active');
+            chatView.style.display = 'none';
+            if (chatTab) chatTab.classList.remove('active');
+            if (galleryTab) galleryTab.classList.add('active');
+            galleryState.open = true;
+            if (galleryState.items.length === 0) {
+                loadGallery(true);
+            } else {
+                attachGalleryRemovedListener();
+            }
+        }
+
+        function closeGalleryView() {
+            var galleryView = document.getElementById('gallery-view');
+            var chatView = document.getElementById('chat-view');
+            var chatTab = document.getElementById('chat-tab');
+            var galleryTab = document.getElementById('gallery-tab');
+            if (!galleryView || !chatView) return;
+
+            galleryView.classList.remove('active');
+            chatView.style.display = 'flex';
+            if (chatTab) chatTab.classList.add('active');
+            if (galleryTab) galleryTab.classList.remove('active');
+            galleryState.open = false;
+            if (galleryRemovedHandler) {
+                artIndexRef.off('child_removed', galleryRemovedHandler);
+                galleryRemovedHandler = null;
+            }
+        }
+
+        // --- GALLERY LOGIC ---
+        function toggleGalleryView() {
+            if (galleryState.open) {
+                closeGalleryView();
+            } else {
+                openGalleryView();
+            }
+        }
+
+        function attachGalleryRemovedListener() {
+            if (galleryRemovedHandler) return;
+            var grid = document.getElementById('gallery-grid');
+            if (!grid) return;
+            galleryRemovedHandler = function (snap) {
+                var msgId = snap.key;
+                var item = grid.querySelector('.gallery-item[data-msg-id="' + msgId + '"]');
+                if (item && item.parentNode) item.parentNode.removeChild(item);
+                if (grid.children.length === 0) {
+                    grid.innerHTML = '<div class="gallery-empty" data-i18n="kindlechat.gallery.empty">No art posted yet.</div>';
+                }
+            };
+            artIndexRef.on('child_removed', galleryRemovedHandler);
+        }
+
+        function isGalleryArtMessage(msg) {
+            if (!msg) return false;
+            return msg.type === 'pixel_art' || msg.type === 'flipbook';
+        }
+
+        function getGalleryThumbnail(msg) {
+            return msg.thumbnail || '';
+        }
+
+        function getGalleryTypeLabel(msg) {
+            if (msg.type === 'flipbook') return (window.t ? window.t('kindlechat.gallery.flipbook', 'Flipbook') : 'Flipbook');
+            return (window.t ? window.t('kindlechat.gallery.pixel', 'Pixel') : 'Pixel');
+        }
+
+        function loadGallery(reset) {
+            if (galleryState.loading) return;
+            galleryState.loading = true;
+
+            var grid = document.getElementById('gallery-grid');
+            var loadMoreBtn = document.getElementById('gallery-load-more-btn');
+            var loadMoreWrap = document.getElementById('gallery-load-more');
+
+            if (reset) {
+                galleryState.items = [];
+                galleryState.oldestTimestamp = null;
+                galleryState.noMore = false;
+                if (grid) grid.innerHTML = '';
+            }
+
+            if (loadMoreBtn) loadMoreBtn.disabled = true;
+            if (loadMoreBtn) loadMoreBtn.textContent = (window.t ? window.t('kindlechat.gallery.loading', 'Loading...') : 'Loading...');
+
+            var query;
+            if (galleryState.oldestTimestamp) {
+                query = artIndexRef.orderByChild('timestamp').endAt(galleryState.oldestTimestamp - 1).limitToLast(galleryState.batchSize);
+            } else {
+                query = artIndexRef.orderByChild('timestamp').limitToLast(galleryState.batchSize);
+            }
+
+            query.once('value').then(function (snapshot) {
+                if (!galleryState.open) return;
+
+                if (!snapshot.exists()) {
+                    galleryState.noMore = true;
+                    if (grid && grid.children.length === 0) {
+                        grid.innerHTML = '<div class="gallery-empty" data-i18n="kindlechat.gallery.empty">No art posted yet.</div>';
+                    }
+                    if (loadMoreWrap) loadMoreWrap.style.display = 'none';
+                    return;
+                }
+
+                var newItems = [];
+                var oldestInBatch = null;
+                var seenIds = {};
+
+                snapshot.forEach(function (child) {
+                    var entry = child.val();
+                    var msgId = child.key;
+                    if (seenIds[msgId]) return;
+                    seenIds[msgId] = true;
+
+                    if (typeof entry.timestamp === 'number') {
+                        if (oldestInBatch === null || entry.timestamp < oldestInBatch) oldestInBatch = entry.timestamp;
+                    }
+
+                    if (isGalleryArtMessage(entry)) {
+                        newItems.push({ id: msgId, data: entry });
+                    }
+                });
+
+                if (oldestInBatch !== null) {
+                    galleryState.oldestTimestamp = oldestInBatch;
+                }
+
+                var snapshotSize = 0;
+                snapshot.forEach(function () { snapshotSize++; });
+                if (snapshotSize < galleryState.batchSize) {
+                    galleryState.noMore = true;
+                }
+
+                // Reverse to newest-first, then append to grid (older batches naturally fall below existing items)
+                newItems.reverse();
+                for (var i = 0; i < newItems.length; i++) {
+                    galleryState.items.push(newItems[i]);
+                    renderGalleryItem(newItems[i].data, newItems[i].id);
+                }
+
+                if (grid && grid.children.length === 0) {
+                    grid.innerHTML = '<div class="gallery-empty" data-i18n="kindlechat.gallery.empty">No art posted yet.</div>';
+                }
+
+                if (loadMoreWrap) loadMoreWrap.style.display = galleryState.noMore ? 'none' : 'block';
+                attachGalleryRemovedListener();
+            })['catch'](function (err) {
+                console.error('Error loading gallery:', err);
+                var grid = document.getElementById('gallery-grid');
+                if (grid && grid.children.length === 0) {
+                    grid.innerHTML = '<div class="gallery-empty">Error loading gallery.</div>';
+                }
+            }).then(function () {
+                galleryState.loading = false;
+                var loadMoreBtn = document.getElementById('gallery-load-more-btn');
+                if (loadMoreBtn) {
+                    loadMoreBtn.disabled = false;
+                    loadMoreBtn.textContent = (window.t ? window.t('kindlechat.gallery.load_more', 'Load Older') : 'Load Older');
+                }
+            });
+        }
+
+        function loadMoreGallery() {
+            if (galleryState.noMore || galleryState.loading) return;
+            loadGallery(false);
+        }
+
+        function renderGalleryItem(msg, msgId) {
+            var grid = document.getElementById('gallery-grid');
+            if (!grid) return;
+
+            // Remove empty state if present
+            var empty = grid.querySelector('.gallery-empty');
+            if (empty && empty.parentNode) empty.parentNode.removeChild(empty);
+
+            var thumb = getGalleryThumbnail(msg);
+            var typeLabel = getGalleryTypeLabel(msg);
+            var authorName = escapeHtml(msg.user ? msg.user.split('@')[0] : (msg.uid ? msg.uid.substring(0, 8) : 'Unknown'));
+            var timeStr = msg.timestamp ? formatChatTime(msg.timestamp) : '';
+            var text = msg.text || '';
+            if (text) text = censorText(text);
+            var caption = text ? escapeHtml(text.substring(0, 60)) : '';
+            var avatarId = 'gallery-avatar-' + msgId.replace(/[^a-zA-Z0-9]/g, '_');
+
+            var item = document.createElement('div');
+            item.className = 'gallery-item';
+            item.setAttribute('data-msg-id', msgId);
+            item.onclick = (function (id) {
+                return function () { openGalleryItem(id); };
+            })(msgId);
+
+            item.innerHTML = '<div style="display:flex; align-items:center; width:100%; margin-bottom:6px;">' +
+                '<canvas id="' + avatarId + '" width="32" height="32" style="width:32px; height:32px; border:2px solid black; margin-right:8px; flex-shrink:0; image-rendering:pixelated; image-rendering:crisp-edges; background:white;"></canvas>' +
+                '<span class="gallery-author" style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + authorName + '</span>' +
+                '</div>' +
+                '<img src="' + escapeHtml(thumb) + '" class="gallery-thumb" alt="">' +
+                '<div class="gallery-info">' +
+                '<span class="gallery-type">' + typeLabel + '</span>' +
+                (timeStr ? ' <span style="color:#666;">' + timeStr + '</span>' : '') +
+                '</div>' +
+                (caption ? '<div class="gallery-info" style="margin-top:2px; color:#666;">' + caption + '</div>' : '');
+
+            grid.appendChild(item);
+            resolveGalleryAuthor(msg.uid, item, avatarId);
+        }
+
+        function resolveGalleryAuthor(uid, itemEl, avatarId) {
+            if (!uid || !itemEl || !avatarId) return;
+            drawAvatar(avatarId, uid);
+            if (typeof window.rekindleFetchUserCard !== 'function') return;
+            window.rekindleFetchUserCard(rtdb, uid, function (card) {
+                if (!card) return;
+                var seed = card.customAvatar || card.avatarSeed || uid;
+                drawAvatar(avatarId, seed);
+                var username = card.username || uid.substring(0, 8);
+                var nameEl = itemEl.querySelector('.gallery-author');
+                if (nameEl) nameEl.textContent = escapeHtml(username);
+                // Cache for other lookups
+                if (username && !usernameToProfile[username]) {
+                    usernameToProfile[username] = { uid: uid, avatarSeed: seed };
+                }
+            });
+        }
+
+        function openGalleryItem(msgId) {
+            // Fetch the full message to show the large pixel art or play the flipbook
+            generalChatRef.child(msgId).once('value').then(function (snap) {
+                var msg = snap.val();
+                if (!msg) {
+                    // Message was deleted; show a hint
+                    showModal((window.t ? window.t('kindlechat.gallery.deleted', 'This art is no longer available.') : 'This art is no longer available.'));
+                    return;
+                }
+
+                if (msg.is_pixel_art && msg.pixel_art) {
+                    showPixelArtModal(msg, msgId);
+                } else if (msg.is_flipnote && msg.flipnote_data) {
+                    window.flipnoteData = window.flipnoteData || {};
+                    window.flipnoteData[msgId] = msg.flipnote_data;
+                    window.galleryFlipbookData = msg.flipnote_data;
+                    showFlipbookModal(msgId);
+                }
+            })['catch'](function (err) {
+                console.error('Error opening gallery item:', err);
+            });
+        }
+
+        function showPixelArtModal(msg, msgId) {
+            var overlay = document.getElementById('modal-overlay');
+            var generic = document.getElementById('generic-modal-content');
+            var settings = document.getElementById('settings-modal-content');
+            var rules = document.getElementById('rules-modal-content');
+            if (generic) generic.style.display = 'none';
+            if (settings) settings.style.display = 'none';
+            if (rules) rules.style.display = 'none';
+
+            var modalBox = document.getElementById('generic-modal-content');
+            if (!modalBox) return;
+
+            var imageSrc = msg.pixel_art || '';
+            var caption = msg.text || '';
+            var safeCaption = caption ? escapeHtml(censorText(caption)) : '';
+            var safeSrc = escapeHtml(imageSrc);
+            var safeMsgId = escapeHtml(msgId || '');
+            var safeUid = escapeHtml(msg.uid || '');
+            var authorName = escapeHtml(msg.uid ? msg.uid.substring(0, 8) : 'Unknown');
+
+            var headerHtml = '<div id="pixel-modal-header" style="display:flex; align-items:center; padding: 15px 15px 0 15px;">' +
+                '<canvas id="pixel-modal-avatar" width="32" height="32" style="width:32px; height:32px; border:2px solid black; margin-right:10px; flex-shrink:0; image-rendering:pixelated; image-rendering:crisp-edges; background:white;"></canvas>' +
+                '<span id="pixel-modal-username" style="font-weight:bold; font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + authorName + '</span>' +
+                '</div>';
+
+            var reportButtonHtml = '';
+            if (currentUser && msg.uid && msg.uid !== currentUser.uid && msg.uid !== 'xEtAch5i5tdiMDTOnL8dXFxM5Nt1') {
+                var safeMsgId2 = safeMsgId.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+                var safeReportedUid = safeUid.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+                var safeSnapshot = ('[Pixel Art] ' + (caption || ''))
+                    .replace(/\\/g, '\\\\\\\\')
+                    .replace(/'/g, "\\'")
+                    .replace(/\n/g, '\\n')
+                    .replace(/\r/g, '\\r')
+                    .replace(/\u0026/g, '\u0026amp;')
+                    .replace(/\u003c/g, '\u0026lt;')
+                    .replace(/\u003e/g, '\u0026gt;')
+                    .replace(/"/g, '\u0026quot;');
+                reportButtonHtml = '<div style="margin-top:15px; display:flex; justify-content:center;">' +
+                    '<div class="report-btn" style="width:auto; height:auto; padding:4px 10px; border-radius:0; font-size:0.8rem; opacity:1;" onclick="rekindleOpenReportModal({contentType:\'kindlechat\',contentId:\'' + safeMsgId2 + '\',contentPath:\'kindlechat/messages/' + safeMsgId2 + '\',reportedUserId:\'' + safeReportedUid + '\',contentSnapshot:\'' + safeSnapshot + '\'})" title="Report" data-i18n="kindlechat.btn.report">Report</div>' +
+                    '</div>';
+            }
+
+            modalBox.style.padding = '0';
+            modalBox.style.width = '560px';
+            modalBox.style.maxWidth = 'calc(100vw - 40px)';
+            modalBox.innerHTML = '<div class="title-bar" style="border-bottom:2px solid black; margin-bottom:0;">' +
+                '<div class="title-stripes"></div>' +
+                '<div class="close-box" onclick="hideModal()">X</div>' +
+                '<span class="title-text" data-i18n="kindlechat.gallery.pixel_title">Pixel Art</span>' +
+                '</div>' +
+                headerHtml +
+                '<div style="padding: 15px;">' +
+                '<img src="' + safeSrc + '" style="width:512px; height:512px; max-width:100%; border:2px solid black; image-rendering:pixelated; image-rendering:crisp-edges; display:block; margin:0 auto;">' +
+                (safeCaption ? '<div style="margin-top:10px; font-size:0.9rem; word-break:break-word;">' + safeCaption + '</div>' : '') +
+                reportButtonHtml +
+                '</div>';
+
+            modalBox.style.display = 'block';
+            if (overlay) overlay.style.display = 'flex';
+
+            drawAvatar('pixel-modal-avatar', msg.uid || '');
+            if (msg.uid && typeof window.rekindleFetchUserCard === 'function') {
+                window.rekindleFetchUserCard(rtdb, msg.uid, function (card) {
+                    if (!card) return;
+                    var seed = card.customAvatar || card.avatarSeed || msg.uid;
+                    drawAvatar('pixel-modal-avatar', seed);
+                    var username = card.username || msg.uid.substring(0, 8);
+                    var nameEl = document.getElementById('pixel-modal-username');
+                    if (nameEl) nameEl.textContent = escapeHtml(username);
+                });
+            }
+        }
+
+        function showFlipbookModal(msgId) {
+            var overlay = document.getElementById('modal-overlay');
+            var generic = document.getElementById('generic-modal-content');
+            var settings = document.getElementById('settings-modal-content');
+            var rules = document.getElementById('rules-modal-content');
+            if (generic) generic.style.display = 'none';
+            if (settings) settings.style.display = 'none';
+            if (rules) rules.style.display = 'none';
+
+            var modalBox = document.getElementById('generic-modal-content');
+            if (!modalBox) return;
+
+            var safeMsgId = escapeHtml(msgId || '');
+            var firstFrame = (window.galleryFlipbookData && window.galleryFlipbookData.frames && window.galleryFlipbookData.frames.length > 0) ? window.galleryFlipbookData.frames[0] : '';
+
+            modalBox.innerHTML = '<div class="title-bar" style="border-bottom:2px solid black; margin-bottom:10px;">' +
+                '<div class="title-stripes"></div>' +
+                '<div class="close-box" onclick="hideModal()">X</div>' +
+                '<span class="title-text" data-i18n="kindlechat.gallery.flipbook_title">Flipbook</span>' +
+                '</div>' +
+                '<div style="padding: 0 15px 15px 15px;">' +
+                '<div style="width:256px; height:256px; max-width:100%; border:2px solid black; margin:0 auto; background:white; position:relative; cursor:pointer;" id="gallery-flipbook-viewer" onclick="playGalleryFlipbook()">' +
+                '<img id="gallery-flipbook-img" src="' + escapeHtml(firstFrame) + '" style="width:100%; height:100%; image-rendering:pixelated; display:block;">' +
+                '<div id="gallery-flipbook-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.1); font-size:2rem; color:white; text-shadow:1px 1px 0 black;">▶</div>' +
+                '</div>' +
+                '<div style="margin-top:15px; display:flex; justify-content:center; flex-wrap:wrap;">' +
+                '<button class="modal-btn" onclick="hideModal()" style="margin-right:8px;" data-i18n="common.close">Close</button>' +
+                '<button class="modal-btn" onclick="jumpToMessage(\'' + safeMsgId + '\')" data-i18n="kindlechat.gallery.view_context">View in Chat</button>' +
+                '</div>' +
+                '</div>';
+
+            modalBox.style.display = 'block';
+            if (overlay) overlay.style.display = 'flex';
+
+            setTimeout(function () { playGalleryFlipbook(); }, 100);
+        }
+
+        function playGalleryFlipbook() {
+            var imgEl = document.getElementById('gallery-flipbook-img');
+            var overlay = document.getElementById('gallery-flipbook-overlay');
+            if (!imgEl || !overlay) return;
+
+            var data = window.galleryFlipbookData;
+            if (!data) return;
+            var frames = data.frames;
+            var fps = data.fps || 6;
+            if (!frames || frames.length === 0) return;
+
+            if (imgEl.dataset.playing === "true") {
+                imgEl.dataset.playing = "false";
+                overlay.style.display = "flex";
+                if (imgEl.playTimer) clearTimeout(imgEl.playTimer);
+                imgEl.src = frames[0];
+                return;
+            }
+
+            imgEl.dataset.playing = "true";
+            overlay.style.display = "none";
+
+            var frameIdx = 0;
+            function loop() {
+                if (imgEl.dataset.playing !== "true") return;
+                frameIdx = (frameIdx + 1) % frames.length;
+                imgEl.src = frames[frameIdx];
+                imgEl.playTimer = setTimeout(loop, 1000 / fps);
+            }
+
+            loop();
+        }
+
+        function jumpToMessage(msgId) {
+            hideModal();
+            if (!msgId) return;
+            if (galleryState.open) toggleGalleryView();
+
+            var history = document.getElementById('chat-history');
+            var msgEl = history ? history.querySelector('.msg[data-msg-id="' + msgId + '"]') : null;
+
+            if (msgEl && history) {
+                msgEl.scrollIntoView({ behavior: 'auto', block: 'center' });
+                // Highlight briefly
+                msgEl.style.outline = '3px solid #000';
+                setTimeout(function () { msgEl.style.outline = ''; }, 1500);
+            } else {
+                // Message not currently loaded (too old). Show a hint.
+                showModal((window.t ? window.t('kindlechat.gallery.not_loaded', 'This message is not loaded. Scroll up in chat to load older messages.') : 'This message is not loaded. Scroll up in chat to load older messages.'));
+            }
+        }
 
         function censorText(text) {
             if (window.filterBadWords) return window.filterBadWords(text);
@@ -3441,6 +4049,10 @@
                             undone: false
                         };
                         socialRtdb.ref('kindlechat/messages/' + msgId).remove().then(function () {
+                            var artIndexUpdates = {};
+                            artIndexUpdates['kindlechat/art_index/' + msgId] = null;
+                            return socialRtdb.ref().update(artIndexUpdates);
+                        }).then(function () {
                             return rtdb.ref('mod_actions/' + logKey).set(updates['mod_actions/' + logKey]);
                         })['catch'](function (e) {
                             showModal("Delete failed: " + e.message);
@@ -3449,7 +4061,11 @@
                 });
             } else {
                 showConfirmModal("Permanently delete this message?", function () {
-                    socialRtdb.ref('kindlechat/messages/' + msgId).remove()['catch'](function (e) {
+                    socialRtdb.ref('kindlechat/messages/' + msgId).remove().then(function () {
+                        var artIndexUpdates = {};
+                        artIndexUpdates['kindlechat/art_index/' + msgId] = null;
+                        return socialRtdb.ref().update(artIndexUpdates);
+                    })['catch'](function (e) {
                         showModal("Delete failed: " + e.message);
                     });
                 });
