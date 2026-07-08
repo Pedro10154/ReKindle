@@ -658,6 +658,59 @@
             color: white;
             border-color: black;
         }
+
+        /* PIXEL ART AVATAR PICKER */
+        .pixel-picker-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 15px 0;
+            padding: 5px;
+        }
+
+        .pixel-picker-item {
+            background: white;
+            border: 2px solid black;
+            padding: 8px;
+            cursor: pointer;
+            box-shadow: 2px 2px 0 #ccc;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .pixel-picker-item:active {
+            transform: translate(2px, 2px);
+            box-shadow: none;
+        }
+
+        .pixel-picker-thumb {
+            width: 64px;
+            height: 64px;
+            border: 1px solid #ddd;
+            background: white;
+            image-rendering: pixelated;
+            object-fit: contain;
+        }
+
+        .pixel-picker-title {
+            font-size: 0.7rem;
+            margin-top: 5px;
+            text-align: center;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 100%;
+        }
+
+        .pixel-picker-empty {
+            text-align: center;
+            color: #666;
+            padding: 20px;
+            font-size: 0.85rem;
+        }
     </style>
 
     <!-- FIREBASE (WITH RTDB) -->
@@ -790,6 +843,9 @@
                                 style="display: flex; flex-direction: column; margin-left: 20px">
                                 <button class="sys-btn" onclick="openAvatarModal()" data-i18n="neighbourhood.btn.draw"
                                     style="font-size:0.75rem; padding:6px 12px;">Draw Icon</button>
+                                <button class="sys-btn" onclick="openPixelArtPicker()"
+                                    data-i18n="neighbourhood.btn.pixel_art"
+                                    style="font-size:0.75rem; padding:6px 12px; margin-top: 8px">Use Pixel Art</button>
                                 <button class="sys-btn" onclick="regenerateAvatar()"
                                     data-i18n="neighbourhood.btn.regenerate"
                                     style="font-size:0.75rem; padding:6px 12px;; margin-top: 8px">Regenerate</button>
@@ -1480,6 +1536,37 @@
                 lastActive: firebase.database.ServerValue.TIMESTAMP
             };
 
+            // Check all UGC fields for profanity before saving
+            const badWordFields = [];
+            badWordFields.push(bio);
+            badWordFields.push(profileData.pronunciation);
+            badWordFields.push(profileData.occupation);
+            badWordFields.push(profileData.hometown);
+            badWordFields.push(profileData.gender);
+            badWordFields.push(profileData.pronouns);
+            badWordFields.push(profileData.language);
+            badWordFields.push(profileData.travel);
+            badWordFields.push(profileData.location);
+            Object.keys(profileData.favorites).forEach(function(key) {
+                badWordFields.push(profileData.favorites[key]);
+            });
+            if (Array.isArray(profileData.interests)) {
+                profileData.interests.forEach(function(interest) {
+                    badWordFields.push(interest);
+                });
+            }
+            Object.keys(profileData.socialLinks).forEach(function(key) {
+                badWordFields.push(profileData.socialLinks[key]);
+            });
+
+            for (var i = 0; i < badWordFields.length; i++) {
+                if (profileContainsBadWords(badWordFields[i])) {
+                    statusEl.innerText = window.t('neighbourhood.msg.profanity', "Profile contains inappropriate language. Please remove it and try again.");
+                    statusEl.style.color = '#cc0000';
+                    return;
+                }
+            }
+
             // Write to /users_public/{uid}
             // Use update to avoid overwriting other nodes
             socialRtdb.ref('users_public/' + currentUser.uid).update(profileData)
@@ -1655,6 +1742,16 @@
             return 'Anonymous';
         }
 
+        function censorProfileText(text) {
+            if (!text || !window.filterBadWords) return text || '';
+            return window.filterBadWords(String(text));
+        }
+
+        function profileContainsBadWords(text) {
+            if (!text || !window.filterBadWords) return false;
+            return window.filterBadWords(String(text)) !== String(text);
+        }
+
         // VIEW / EDIT MODES
         function toggleEditMode(showEdit) {
             const readOnlyEl = document.getElementById('profile-read-only');
@@ -1687,8 +1784,8 @@
 
             document.getElementById('profile-view-name').innerHTML = badgeHtml + escapeHtml(kName);
 
-            const pronouns = profile.pronouns ? `(${profile.pronouns})` : '';
-            const pronunciation = profile.pronunciation ? `• /${profile.pronunciation}/` : '';
+            const pronouns = profile.pronouns ? `(${censorProfileText(profile.pronouns)})` : '';
+            const pronunciation = profile.pronunciation ? `• /${censorProfileText(profile.pronunciation)}/` : '';
             document.getElementById('profile-view-pronouns').innerText = `${pronouns} ${pronunciation}`;
 
             document.getElementById('btn-edit-profile').style.display = isMe ? 'inline-block' : 'none';
@@ -1697,11 +1794,11 @@
                 document.getElementById('btn-message-profile').setAttribute('onclick', `messageUser('${profile.uid}')`);
             }
 
-            document.getElementById('profile-view-bio').innerText = profile.bio || '';
-            document.getElementById('profile-view-location').innerText = profile.location || '-';
-            document.getElementById('profile-view-occupation').innerText = profile.occupation || '-';
-            document.getElementById('profile-view-hometown').innerText = profile.hometown || '-';
-            document.getElementById('profile-view-language').innerText = profile.language || '-';
+            document.getElementById('profile-view-bio').innerText = censorProfileText(profile.bio) || '';
+            document.getElementById('profile-view-location').innerText = censorProfileText(profile.location) || '-';
+            document.getElementById('profile-view-occupation').innerText = censorProfileText(profile.occupation) || '-';
+            document.getElementById('profile-view-hometown').innerText = censorProfileText(profile.hometown) || '-';
+            document.getElementById('profile-view-language').innerText = censorProfileText(profile.language) || '-';
 
             // Birthday -> Age
             let ageStr = '-';
@@ -1721,7 +1818,7 @@
             document.getElementById('profile-view-joined').innerText = joinedStr;
 
             // Travel
-            document.getElementById('profile-view-travel').innerText = profile.travel || '-';
+            document.getElementById('profile-view-travel').innerText = censorProfileText(profile.travel) || '-';
 
             // Socials
             const socialsContainer = document.getElementById('profile-view-socials');
@@ -1731,7 +1828,7 @@
                     if (handle) {
                         const div = document.createElement('div');
                         div.className = 'social-pill';
-                        div.innerText = `${platform}: ${handle}`; // Could improve with icons
+                        div.innerText = `${platform}: ${censorProfileText(handle)}`; // Could improve with icons
                         socialsContainer.appendChild(div);
                     }
                 });
@@ -1742,7 +1839,7 @@
             interestsContainer.innerHTML = '';
             if (profile.interests) {
                 profile.interests.forEach(tag => {
-                    renderInterestWithIcon(tag, interestsContainer);
+                    renderInterestWithIcon(censorProfileText(tag), interestsContainer);
                 });
             }
 
@@ -1755,7 +1852,7 @@
                 Object.entries(profile.favorites).forEach(([key, val]) => {
                     if (allowed.includes(key) && val) {
                         const row = document.createElement('div');
-                        row.innerHTML = `<b>${map[key] || key}:</b> <span>${escapeHtml(val)}</span>`;
+                        row.innerHTML = `<b>${map[key] || key}:</b> <span>${escapeHtml(censorProfileText(val))}</span>`;
                         favContainer.appendChild(row);
                     }
                 });
@@ -1784,7 +1881,7 @@
             pill.style.display = 'flex';
             pill.style.alignItems = 'center';
             // pill.style.gap = '5px'; REMOVED KINDLE
-            pill.innerHTML = `<span>Loading...</span> <span style="margin-left:5px;">${escapeHtml(tag)}</span>`;
+            pill.innerHTML = `<span>Loading...</span> <span style="margin-left:5px;">${escapeHtml(censorProfileText(tag))}</span>`;
 
             // Fetch icon
             try {
@@ -1796,7 +1893,7 @@
                     const svgRes = await fetch(iconUrl);
                     const svgText = await svgRes.text();
 
-                    pill.innerHTML = `<div style="width:16px; height:16px; display:flex; margin-right:5px;">${svgText}</div><div>${escapeHtml(tag)}</div>`;
+                    pill.innerHTML = `<div style="width:16px; height:16px; display:flex; margin-right:5px;">${svgText}</div><div>${escapeHtml(censorProfileText(tag))}</div>`;
                     const svg = pill.querySelector('svg');
                     if (svg) {
                         svg.style.width = '100%';
@@ -1805,11 +1902,11 @@
                     }
                 } else {
                     // No icon found
-                    pill.innerHTML = `<span>•</span> <span style="margin-left:5px;">${escapeHtml(tag)}</span>`;
+                    pill.innerHTML = `<span>•</span> <span style="margin-left:5px;">${escapeHtml(censorProfileText(tag))}</span>`;
                 }
             } catch (e) {
                 console.error("Icon fetch failed", e);
-                pill.innerHTML = `<span>•</span> <span style="margin-left:5px;">${escapeHtml(tag)}</span>`;
+                pill.innerHTML = `<span>•</span> <span style="margin-left:5px;">${escapeHtml(censorProfileText(tag))}</span>`;
             }
             container.appendChild(pill);
         }
@@ -1969,6 +2066,137 @@
         function clearCustomAvatar() {
             myProfile.customAvatar = null;
             drawAvatar('my-avatar', myProfile.avatarSeed);
+        }
+
+        // --- PIXEL ART AVATAR PICKER ---
+        function loadPixelManifest() {
+            const key = 'pixel_manifest';
+            let manifest = [];
+            const local = localStorage.getItem(key);
+            if (local) {
+                try { manifest = JSON.parse(local); } catch (e) { manifest = []; }
+            }
+            return manifest;
+        }
+
+        async function loadPixelManifestCloud() {
+            if (!currentUser || !mainDb) return [];
+            try {
+                const doc = await mainDb.collection('users').doc(currentUser.uid).collection('settings').doc('pixel_manifest').get();
+                if (doc.exists) {
+                    const items = doc.data().items || [];
+                    localStorage.setItem('pixel_manifest', JSON.stringify(items));
+                    return items;
+                }
+            } catch (e) {
+                console.error('Cloud pixel manifest load failed:', e);
+            }
+            return [];
+        }
+
+        async function loadPixelDrawingData(id) {
+            const key = 'pixel_drawing_' + id;
+            let data = localStorage.getItem(key);
+            if (data) {
+                try { return JSON.parse(data); } catch (e) { return null; }
+            }
+            if (currentUser && mainDb) {
+                try {
+                    const doc = await mainDb.collection('users').doc(currentUser.uid).collection('pixel_drawings').doc(id).get();
+                    if (doc.exists) {
+                        data = doc.data().grid;
+                        if (data) {
+                            localStorage.setItem(key, data);
+                            return JSON.parse(data);
+                        }
+                    }
+                } catch (e) { console.error('Cloud pixel drawing load failed:', e); }
+            }
+            return null;
+        }
+
+        function gridToAvatar(grid) {
+            if (!grid || grid.length !== 16) return null;
+            const avatar = [];
+            for (let r = 0; r < 16; r++) {
+                for (let c = 0; c < 16; c++) {
+                    avatar.push(grid[r] && grid[r][c] > 0 ? 1 : 0);
+                }
+            }
+            return avatar;
+        }
+
+        function openPixelArtPicker() {
+            const modal = document.getElementById('pixel-art-picker-modal');
+            const gridEl = document.getElementById('pixel-picker-grid');
+            if (!modal || !gridEl) return;
+
+            gridEl.innerHTML = '<div class="pixel-picker-empty">Loading...</div>';
+            modal.style.display = 'flex';
+
+            const manifest = loadPixelManifest();
+            renderPixelArtPicker(manifest);
+
+            loadPixelManifestCloud().then(function (cloudManifest) {
+                if (cloudManifest.length > 0) {
+                    renderPixelArtPicker(cloudManifest);
+                }
+            });
+        }
+
+        function renderPixelArtPicker(manifest) {
+            const gridEl = document.getElementById('pixel-picker-grid');
+            if (!gridEl) return;
+
+            const items = (manifest || []).filter(function (item) { return item && item.size === 16; });
+            if (items.length === 0) {
+                gridEl.innerHTML = '<div class="pixel-picker-empty">No 16x16 pixel art drawings found.<br>Draw one in Pixel first!</div>';
+                return;
+            }
+
+            gridEl.innerHTML = '';
+            items.sort(function (a, b) { return b.modified - a.modified; });
+
+            items.forEach(function (item) {
+                const el = document.createElement('div');
+                el.className = 'pixel-picker-item';
+                el.onclick = function () { selectPixelArtAsAvatar(item.id); };
+
+                let thumbHtml = '';
+                if (item.thumbnail) {
+                    thumbHtml = '<img src="' + escapeHtml(item.thumbnail) + '" class="pixel-picker-thumb" alt="">';
+                } else {
+                    thumbHtml = '<div class="pixel-picker-thumb" style="display:flex; align-items:center; justify-content:center; color:#ccc; font-size:1.5rem;">?</div>';
+                }
+
+                const title = item.title || 'Untitled';
+                el.innerHTML = thumbHtml + '<div class="pixel-picker-title">' + escapeHtml(title) + '</div>';
+                gridEl.appendChild(el);
+            });
+        }
+
+        async function selectPixelArtAsAvatar(id) {
+            const grid = await loadPixelDrawingData(id);
+            if (!grid) {
+                showAlertModal('Could not load that drawing.');
+                return;
+            }
+
+            const avatar = gridToAvatar(grid);
+            if (!avatar) {
+                showAlertModal('Only 16x16 drawings can be used as avatars.');
+                return;
+            }
+
+            myProfile.customAvatar = avatar;
+            myProfile.avatarSeed = null;
+            drawAvatar('my-avatar', myProfile.customAvatar);
+            closePixelArtPicker();
+        }
+
+        function closePixelArtPicker() {
+            const modal = document.getElementById('pixel-art-picker-modal');
+            if (modal) modal.style.display = 'none';
         }
 
         function toggleProfilePrivacy() {
@@ -2185,10 +2413,10 @@
 
             document.getElementById('popup-view-name').innerHTML = badgeHtml + fullName;
 
-            const pronouns = user.pronouns ? `(${escapeHtml(user.pronouns)})` : '';
-            const pronunciation = user.pronunciation ? ` • <span style="font-style:italic;">"${escapeHtml(user.pronunciation)}"</span>` : '';
+            const pronouns = user.pronouns ? `(${escapeHtml(censorProfileText(user.pronouns))})` : '';
+            const pronunciation = user.pronunciation ? ` • <span style="font-style:italic;">"${escapeHtml(censorProfileText(user.pronunciation))}"</span>` : '';
             document.getElementById('popup-view-pronouns').innerHTML = `${pronouns}${pronunciation}`;
-            document.getElementById('popup-view-bio').innerText = user.bio || '';
+            document.getElementById('popup-view-bio').innerText = censorProfileText(user.bio) || '';
 
             // Details
             if (user.birthday) {
@@ -2198,10 +2426,10 @@
                 document.getElementById('popup-view-age').innerText = '-';
             }
 
-            document.getElementById('popup-view-location').innerText = user.location || '-';
-            document.getElementById('popup-view-occupation').innerText = user.occupation || '-';
-            document.getElementById('popup-view-hometown').innerText = user.hometown || '-';
-            document.getElementById('popup-view-language').innerText = user.language || '-';
+            document.getElementById('popup-view-location').innerText = censorProfileText(user.location) || '-';
+            document.getElementById('popup-view-occupation').innerText = censorProfileText(user.occupation) || '-';
+            document.getElementById('popup-view-hometown').innerText = censorProfileText(user.hometown) || '-';
+            document.getElementById('popup-view-language').innerText = censorProfileText(user.language) || '-';
 
             // Joined
             let popupJoinedStr = '-';
@@ -2234,7 +2462,7 @@
                     if (!tag) return;
                     const pill = document.createElement('span');
                     pill.className = 'tag';
-                    pill.innerText = tag;
+                    pill.innerText = censorProfileText(tag);
                     tagContainer.appendChild(pill);
                 });
             }
@@ -2252,7 +2480,7 @@
             }
 
             // Travel
-            document.getElementById('popup-view-travel').innerText = user.travel || '';
+            document.getElementById('popup-view-travel').innerText = censorProfileText(user.travel) || '';
 
             // Message button
             const msgBtn = document.getElementById('popup-message-btn');
@@ -2281,7 +2509,7 @@
             if (!text) return;
             const div = document.createElement('div');
             div.style.fontSize = '0.9rem';
-            div.innerHTML = `<b>${escapeHtml(title)}</b><br><span style="color:#333;">${escapeHtml(text)}</span>`;
+            div.innerHTML = `<b>${escapeHtml(title)}</b><br><span style="color:#333;">${escapeHtml(censorProfileText(text))}</span>`;
             div.style.borderTop = '1px dashed #ccc';
             div.style.paddingTop = '4px';
             container.appendChild(div);
@@ -3555,6 +3783,16 @@
         </div>
     </div>
 
+
+    <!-- PIXEL ART PICKER MODAL -->
+    <div id="pixel-art-picker-modal" class="modal-overlay" style="z-index: 20005;">
+        <div class="modal-box" style="width: 90%; max-width: 400px;">
+            <h3 data-i18n="neighbourhood.modal.pixel_art_title">Choose Pixel Art</h3>
+            <p style="font-size: 0.85rem; color: #666; margin-top: 0;" data-i18n="neighbourhood.modal.pixel_art_desc">Only 16x16 drawings can be used as avatars.</p>
+            <div id="pixel-picker-grid" class="pixel-picker-grid"></div>
+            <button class="sys-btn" onclick="closePixelArtPicker()" style="margin-top: 10px; width: 100%;" data-i18n="btn.cancel">Cancel</button>
+        </div>
+    </div>
 
 </body>
 
