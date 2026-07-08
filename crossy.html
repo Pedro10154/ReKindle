@@ -398,6 +398,10 @@
         const SPRITE_SIZE = 32;
         const CANVAS_W = COLS * TILE;
         const CANVAS_H = ROWS_VISIBLE * TILE;
+        const BLACK_SPEED = 2 / TILE;
+        const JAGGED_STEP = 8;
+        const JAGGED_PATTERN = [-2, 1, -1, 2, 0, -1, 1, -2];
+        const BLACK_KILL_OFFSET = Math.max.apply(null, JAGGED_PATTERN) / TILE;
         const RIVER_ROW = 1;
         const ROAD_ROW = 2;
         const GRASS_ROW = 0;
@@ -469,6 +473,8 @@
         let rows = [];
         let inputQueue = [];
         let cameraY = 0;
+        let blackY = -1;
+        let blackMoving = false;
 
         function rowType(y) {
             const cycle = ((y % 4) + 4) % 4;
@@ -761,6 +767,8 @@
             score = 0;
             topRow = 0;
             cameraY = 0;
+            blackY = -1;
+            blackMoving = false;
             document.getElementById('score').innerText = score;
 
             player = { x: 3, y: 0, facing: 1 };
@@ -786,6 +794,8 @@
         function tryMove(dx, dy) {
             const nx = player.x + dx;
             const ny = player.y + dy;
+
+            if (dy > 0) blackMoving = true;
 
             if (nx < 0 || nx >= COLS) return;
 
@@ -895,6 +905,11 @@
                     }
                 }
             }
+
+            if (blackMoving && !isGameOver) {
+                blackY += BLACK_SPEED;
+                if (player.y <= blackY + BLACK_KILL_OFFSET) endGame();
+            }
         }
 
         function draw() {
@@ -950,6 +965,7 @@
             }
 
             drawPlayer();
+            drawBlack();
         }
 
         function drawTile(type, x, y, w, h, rowY) {
@@ -992,6 +1008,18 @@
                 ctx.restore();
             } else {
                 drawSprite(SPRITES.CHICKEN, screenX, screenY, TILE, TILE);
+            }
+        }
+
+        function drawBlack() {
+            const baseTop = Math.floor(CANVAS_H - ((blackY - cameraY + 1) * TILE));
+            if (baseTop >= CANVAS_H) return;
+            ctx.fillStyle = 'black';
+            for (let x = 0; x < CANVAS_W; x += JAGGED_STEP) {
+                const offset = JAGGED_PATTERN[Math.floor(x / JAGGED_STEP) % JAGGED_PATTERN.length];
+                const top = Math.max(0, baseTop - offset);
+                const h = CANVAS_H - top;
+                if (h > 0) ctx.fillRect(x, top, JAGGED_STEP, h);
             }
         }
 
