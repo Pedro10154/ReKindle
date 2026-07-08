@@ -446,13 +446,6 @@
             flex-shrink: 0;
         }
 
-        /* RESPONSIVE */
-        @media (max-width: 600px) {
-            .sidebar {
-                display: none;
-            }
-        }
-
         .loading {
             padding: 20px;
             text-align: center;
@@ -497,6 +490,11 @@
                     <button class="nav-btn" id="save-btn" onclick="ui.toggleSave()" title="Save Subreddit">☆</button>
                     <span id="loading-indicator"
                         style="display:none; margin-left:10px; font-size:0.8rem;">Loading...</span>
+                </div>
+
+                <div id="rate-limit-message"
+                    style="display:none; padding:8px 10px; background:#fff3cd; border-bottom:2px solid black; font-size:0.85rem; text-align:center;">
+                    Reddit is heavily rate limiting access. Leave this window open to continue retrying.
                 </div>
 
                 <div id="content-area"></div>
@@ -567,6 +565,8 @@
         const api = {
             baseUrl: 'https://www.reddit.com',
             currentRequestId: 0,
+            lastRequestTime: 0,
+            minRequestInterval: 1500,
 
             sleep(ms) {
                 return new Promise(function(resolve) { setTimeout(resolve, ms); });
@@ -578,11 +578,11 @@
                     if (ra) {
                         var seconds = parseInt(ra, 10);
                         if (!isNaN(seconds) && seconds > 0) {
-                            return Math.min(seconds * 1000, 10000);
+                            return Math.min(seconds * 1000, 60000);
                         }
                     }
                 }
-                return Math.min(1000 * Math.pow(2, attempt), 8000);
+                return Math.min(2000 * Math.pow(2, attempt), 15000);
             },
 
             showRetryStatus(ms) {
@@ -591,6 +591,17 @@
             },
 
             async request(endpoint) {
+                var now = Date.now();
+                var timeSinceLast = now - this.lastRequestTime;
+                if (timeSinceLast < this.minRequestInterval) {
+                    await this.sleep(this.minRequestInterval - timeSinceLast);
+                }
+                this.lastRequestTime = Date.now();
+
+                if (typeof ui !== 'undefined' && ui.hideRateLimitMessage) {
+                    ui.hideRateLimitMessage();
+                }
+
                 document.getElementById('loading-indicator').innerText = 'Loading...';
                 const requestId = ++this.currentRequestId;
                 let path = endpoint;
@@ -602,7 +613,7 @@
                     query = "?" + parts[1];
                 }
 
-                if (!path.endsWith('.rss')) {
+                if (!path.endsWith('.rss') && !path.endsWith('.json')) {
                     path += '.rss';
                 }
 
@@ -636,6 +647,9 @@
                             }
 
                             if (res.ok) {
+                                if (typeof ui !== 'undefined' && ui.hideRateLimitMessage) {
+                                    ui.hideRateLimitMessage();
+                                }
                                 return await res.text();
                             }
 
@@ -644,17 +658,20 @@
 
                             if (res.status === 429 || res.status >= 500) {
                                 console.warn('Proxy returned ' + res.status + ', retrying...');
+                                if (res.status === 429 && typeof ui !== 'undefined' && ui.showRateLimitMessage) {
+                                    ui.showRateLimitMessage();
+                                }
                                 continue;
                             }
 
                             throw new Error('Status ' + res.status);
                         } catch (e) {
-                            console.warn('Proxy ' + proxy + ' attempt ' + (attempt + 1) + ' failed:', e);
                             lastError = e;
                             if (e.message && e.message.indexOf('superseded') !== -1) {
                                 document.getElementById('loading-indicator').style.display = 'none';
                                 throw e;
                             }
+                            console.warn('Proxy ' + proxy + ' attempt ' + (attempt + 1) + ' failed:', e);
                         }
                     }
                 }
@@ -673,100 +690,218 @@
                 return this.request(url);
             },
 
+            async getSubredditJson(sub, after) {
+                let url = `/r/${sub}.json`;
+                if (after) url += `?after=${after}&limit=25`;
+                else url += `?limit=25`;
+                return this.request(url);
+            },
+
             async getThread(permalink) {
                 const cleanLink = permalink.replace(/\/$/, "");
                 return this.request(cleanLink);
+            },
+
+            async getThreadJson(permalink) {
+                const cleanLink = permalink.replace(/\/$/, "");
+                return this.request(cleanLink + '.json');
             }
         };
 
-        // --- RSS PARSERS ---
+        function extractPermalinkFromUrl(url) {
+            if (!url) return "";
+            try {
+                return new URL(url).pathname;
+            } catch (e) {
+                return url;
+            }
+        }
+
+        function decodeXmlEntities(text) {
+            return text
+                .replace(/&amp;/g, "&")
+                .replace(/&lt;/g, "<")
+                .replace(/&gt;/g, ">")
+                .replace(/&quot;/g, '"')
+                .replace(/&apos;/g, "'");
+        }
+
+        function stripCdata(text) {
+            return text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
+        }
+
+        function cleanAuthor(text) {
+            if (!text) return "";
+            var t = text.trim();
+            var paren = t.match(/\(([^)]+)\)/);
+            if (paren) t = paren[1];
+            return t.replace(/^\/u\//, "").trim();
+        }
+
+        function extractTagText(xml, tagName) {
+            var regex = new RegExp("<(?:[a-zA-Z0-9-]+:)?" + tagName + "(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[a-zA-Z0-9-]+:)?" + tagName + ">", "i");
+            var match = xml.match(regex);
+            if (!match) return "";
+            return decodeXmlEntities(stripCdata(match[1]).trim());
+        }
+
+        function extractTagAttr(xml, tagName, attrName) {
+            var regex = new RegExp("<(?:[a-zA-Z0-9-]+:)?" + tagName + "[^>]*\\s" + attrName + "=\"([^\"]*)\"", "i");
+            var match = xml.match(regex);
+            return match ? decodeXmlEntities(match[1]) : "";
+        }
+
+        function extractItemFields(xml) {
+            var title = extractTagText(xml, "title");
+            var link = extractTagText(xml, "link") || extractTagText(xml, "guid");
+            var author = extractTagText(xml, "author") || extractTagText(xml, "dc:creator");
+            var category = extractTagText(xml, "category");
+            var id = extractTagText(xml, "guid") || link;
+            var content = extractTagText(xml, "content:encoded") || extractTagText(xml, "description") || extractTagText(xml, "content");
+            return {
+                title: title,
+                author: cleanAuthor(author),
+                subreddit: category,
+                permalink: extractPermalinkFromUrl(link),
+                id: id,
+                contentHtml: content
+            };
+        }
+
+        function extractEntryFields(xml) {
+            var title = extractTagText(xml, "title");
+            var id = extractTagText(xml, "id");
+            var link = extractTagAttr(xml, "link", "href") || id;
+            var author = extractTagText(xml, "name") || extractTagText(xml, "author");
+            var category = extractTagAttr(xml, "category", "term") || extractTagText(xml, "category");
+            var content = extractTagText(xml, "content") || extractTagText(xml, "summary");
+            return {
+                title: title,
+                author: cleanAuthor(author),
+                subreddit: category,
+                permalink: extractPermalinkFromUrl(link),
+                id: id,
+                contentHtml: content
+            };
+        }
+
         function parseRssPosts(xmlText) {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(xmlText, "application/xml");
-            const entries = doc.querySelectorAll("entry");
-            const posts = [];
-
-            entries.forEach(function(entry) {
-                const titleEl = entry.querySelector("title");
-                const authorEl = entry.querySelector("author name");
-                const catEl = entry.querySelector("category");
-                const linkEl = entry.querySelector("link");
-                const idEl = entry.querySelector("id");
-
-                let permalink = "";
-                if (linkEl) {
-                    try {
-                        permalink = new URL(linkEl.getAttribute("href")).pathname;
-                    } catch (err) {
-                        permalink = linkEl.getAttribute("href") || "";
-                    }
+            var posts = [];
+            var itemMatches = xmlText.match(/<item(?:\s[^>]*)?>[\s\S]*?<\/item>/gi);
+            if (itemMatches && itemMatches.length > 0) {
+                for (var i = 0; i < itemMatches.length; i++) {
+                    posts.push(extractItemFields(itemMatches[i]));
                 }
-
-                posts.push({
-                    title: titleEl ? titleEl.textContent : "",
-                    author: authorEl ? authorEl.textContent.replace("/u/", "") : "",
-                    subreddit: catEl ? catEl.getAttribute("term") : "",
-                    permalink: permalink,
-                    id: idEl ? idEl.textContent : ""
-                });
-            });
-
+                return posts;
+            }
+            var entryMatches = xmlText.match(/<entry(?:\s[^>]*)?>[\s\S]*?<\/entry>/gi);
+            if (entryMatches && entryMatches.length > 0) {
+                for (var j = 0; j < entryMatches.length; j++) {
+                    posts.push(extractEntryFields(entryMatches[j]));
+                }
+            }
             return posts;
         }
 
         function parseRssThread(xmlText) {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(xmlText, "application/xml");
-            const entries = doc.querySelectorAll("entry");
-
-            if (entries.length === 0) {
+            var items = xmlText.match(/<item(?:\s[^>]*)?>[\s\S]*?<\/item>/gi);
+            var isAtom = false;
+            if (!items || items.length === 0) {
+                isAtom = true;
+                items = xmlText.match(/<entry(?:\s[^>]*)?>[\s\S]*?<\/entry>/gi);
+            }
+            if (!items || items.length === 0) {
                 return { post: null, comments: [] };
             }
-
-            const first = entries[0];
-            let postPermalink = "";
-            const postLink = first.querySelector("link");
-            if (postLink) {
-                try {
-                    postPermalink = new URL(postLink.getAttribute("href")).pathname;
-                } catch (err) {
-                    postPermalink = postLink.getAttribute("href") || "";
-                }
-            }
-
-            const post = {
-                title: first.querySelector("title") ? first.querySelector("title").textContent : "",
-                author: first.querySelector("author name") ? first.querySelector("author name").textContent.replace("/u/", "") : "",
-                contentHtml: first.querySelector("content") ? first.querySelector("content").textContent : "",
-                permalink: postPermalink
+            var first = items[0];
+            var extracted = isAtom ? extractEntryFields(first) : extractItemFields(first);
+            var post = {
+                title: extracted.title,
+                author: extracted.author,
+                contentHtml: extracted.contentHtml,
+                permalink: extracted.permalink
             };
-
-            const comments = [];
-            for (let i = 1; i < entries.length; i++) {
-                const entry = entries[i];
-                let cPermalink = "";
-                const cLink = entry.querySelector("link");
-                if (cLink) {
-                    try {
-                        cPermalink = new URL(cLink.getAttribute("href")).pathname;
-                    } catch (err) {
-                        cPermalink = cLink.getAttribute("href") || "";
-                    }
-                }
-
+            var comments = [];
+            for (var i = 1; i < items.length; i++) {
+                var c = isAtom ? extractEntryFields(items[i]) : extractItemFields(items[i]);
                 comments.push({
-                    author: entry.querySelector("author name") ? entry.querySelector("author name").textContent.replace("/u/", "") : "",
-                    bodyHtml: entry.querySelector("content") ? entry.querySelector("content").textContent : "",
-                    permalink: cPermalink
+                    author: c.author,
+                    bodyHtml: c.contentHtml,
+                    permalink: c.permalink
                 });
             }
-
             return { post: post, comments: comments };
+        }
+
+        function parseJsonPosts(jsonText) {
+            try {
+                var data = JSON.parse(jsonText);
+                var posts = [];
+                var children = data.data && data.data.children;
+                if (children) {
+                    for (var i = 0; i < children.length; i++) {
+                        var child = children[i].data;
+                        if (child) {
+                            posts.push({
+                                title: child.title || "",
+                                author: child.author || "",
+                                subreddit: child.subreddit || "",
+                                permalink: child.permalink || "",
+                                id: child.name || ""
+                            });
+                        }
+                    }
+                }
+                return posts;
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function parseJsonThread(jsonText) {
+            try {
+                var data = JSON.parse(jsonText);
+                if (!Array.isArray(data) || data.length < 2) {
+                    return { post: null, comments: [] };
+                }
+                var postChildren = data[0].data && data[0].data.children;
+                var commentChildren = data[1].data && data[1].data.children;
+                var postData = postChildren && postChildren[0] ? postChildren[0].data : null;
+                var post = {
+                    title: postData ? postData.title || "" : "",
+                    author: postData ? postData.author || "" : "",
+                    contentHtml: postData ? decodeXmlEntities(postData.selftext_html || "") : "",
+                    permalink: postData ? postData.permalink || "" : ""
+                };
+                var comments = [];
+                if (commentChildren) {
+                    for (var i = 0; i < commentChildren.length; i++) {
+                        var c = commentChildren[i].data;
+                        if (c) {
+                            comments.push({
+                                author: c.author || "",
+                                bodyHtml: decodeXmlEntities(c.body_html || ""),
+                                permalink: c.permalink || ""
+                            });
+                        }
+                    }
+                }
+                return { post: post, comments: comments };
+            } catch (e) {
+                return { post: null, comments: [] };
+            }
+        }
+
+        function postFullnameFromPermalink(permalink) {
+            var m = String(permalink).match(/\/comments\/([a-z0-9]+)/i);
+            if (m && m[1]) return "t3_" + m[1];
+            return "";
         }
 
         // --- UI MANAGER ---
         const ui = {
             currentSub: 'popular',
+            currentThread: null,
             savedSubs: [],
             subToDelete: null,
             afterToken: null,
@@ -783,8 +918,13 @@
                 else this.savedSubs = ['BestOf', 'News', 'Technology', 'Kindle', 'eInk'];
 
                 this.renderSidebar();
-                this.loadCurrentSub();
                 this.initScrollListener();
+
+                if (this.restoreReturnState()) {
+                    // state restored and will load the saved view
+                } else {
+                    this.loadCurrentSub();
+                }
             },
 
             // SYNC LOGIC
@@ -911,7 +1051,7 @@
                     el.onclick = function() { ui.loadThread(p.permalink); };
                     content.appendChild(el);
                 });
-                this.afterToken = posts[posts.length - 1].id;
+                this.afterToken = postFullnameFromPermalink(posts[posts.length - 1].permalink);
             },
 
             initScrollListener() {
@@ -941,8 +1081,16 @@
                 content.appendChild(loader);
 
                 try {
-                    const xmlText = await api.getSubreddit(this.currentSub, this.afterToken);
-                    const posts = parseRssPosts(xmlText);
+                    let responseText = await api.getSubreddit(this.currentSub, this.afterToken);
+                    console.log('Load more RSS length:', responseText.length, 'preview:', responseText.substring(0, 200));
+                    let posts = parseRssPosts(responseText);
+                    console.log('Load more RSS posts:', posts.length);
+                    if (posts.length === 0) {
+                        responseText = await api.getSubredditJson(this.currentSub, this.afterToken);
+                        console.log('Load more JSON length:', responseText.length, 'preview:', responseText.substring(0, 200));
+                        posts = parseJsonPosts(responseText);
+                        console.log('Load more JSON posts:', posts.length);
+                    }
 
                     if (posts.length > 0) {
                         posts.forEach(function(p) {
@@ -957,7 +1105,7 @@
                             el.onclick = function() { ui.loadThread(p.permalink); };
                             content.appendChild(el);
                         });
-                        this.afterToken = posts[posts.length - 1].id;
+                        this.afterToken = postFullnameFromPermalink(posts[posts.length - 1].permalink);
                     } else {
                         this.afterToken = null;
                     }
@@ -978,6 +1126,7 @@
                 sub = sub.replace(/^r\//, '');
                 this.currentSub = sub;
                 this.afterToken = null;
+                this.currentThread = null;
 
                 document.getElementById('back-btn').style.display = 'none';
                 this.renderSidebar();
@@ -986,20 +1135,29 @@
                 content.innerHTML = `<div class="loading">Loading r/${escapeHtml(sub)}...</div>`;
 
                 try {
-                    const xmlText = await api.getSubreddit(sub);
+                    let responseText = await api.getSubreddit(sub);
+                    console.log('RSS response length:', responseText.length, 'preview:', responseText.substring(0, 200));
+                    let posts = parseRssPosts(responseText);
+                    console.log('RSS posts parsed:', posts.length);
+                    if (posts.length === 0) {
+                        responseText = await api.getSubredditJson(sub);
+                        console.log('JSON response length:', responseText.length, 'preview:', responseText.substring(0, 200));
+                        posts = parseJsonPosts(responseText);
+                        console.log('JSON posts parsed:', posts.length);
+                    }
                     try {
-                        localStorage.setItem('reddit_feed_xml_' + sub, xmlText);
+                        localStorage.setItem('reddit_feed_xml_' + sub, responseText);
                     } catch (e) {
                         console.warn('Failed to cache feed:', e);
                     }
-                    const posts = parseRssPosts(xmlText);
                     this.renderPostList(posts, sub, false);
 
                 } catch (e) {
                     if (e.message && e.message.indexOf('superseded') !== -1) return;
                     const cached = localStorage.getItem('reddit_feed_xml_' + sub);
                     if (cached) {
-                        const posts = parseRssPosts(cached);
+                        let posts = parseRssPosts(cached);
+                        if (posts.length === 0) posts = parseJsonPosts(cached);
                         this.renderPostList(posts, sub, true);
                     } else {
                         content.innerHTML = `<div class="loading" style="color:red">Error loading r/${escapeHtml(sub)}<br>${escapeHtml(e.message)}<br><small>If proxy issues persist, try reloading.</small></div>`;
@@ -1011,23 +1169,35 @@
                 const content = document.getElementById('content-area');
                 content.innerHTML = `<div class="loading">Loading thread...</div>`;
                 document.getElementById('back-btn').style.display = 'block';
+                this.currentThread = permalink;
 
                 try {
-                    const xmlText = await api.getThread(permalink);
-                    const data = parseRssThread(xmlText);
+                    let responseText = await api.getThread(permalink);
+                    console.log('Thread RSS length:', responseText.length, 'preview:', responseText.substring(0, 200));
+                    let data = parseRssThread(responseText);
+                    console.log('Thread RSS has post:', !!data.post);
+                    if (!data.post) {
+                        responseText = await api.getThreadJson(permalink);
+                        console.log('Thread JSON length:', responseText.length, 'preview:', responseText.substring(0, 200));
+                        data = parseJsonThread(responseText);
+                        console.log('Thread JSON has post:', !!data.post);
+                    }
                     const post = data.post;
                     const comments = data.comments;
+
+                    if (!post) {
+                        content.innerHTML = `<div class="loading" style="color:red">No thread data found.</div>`;
+                        return;
+                    }
 
                     let html = '<div class="thread-container">';
                     html += `<div class="thread-title">${escapeHtml(post.title)}</div>`;
 
-                    // Body Parsing
                     if (post.contentHtml) {
                         let body = this.decodeHtml(post.contentHtml);
                         const tempDiv = document.createElement('div');
                         tempDiv.innerHTML = body.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
 
-                        // Remove the submission metadata table if present
                         const table = tempDiv.querySelector('table');
                         if (table) {
                             const text = table.innerText || table.textContent;
@@ -1061,6 +1231,7 @@
 
                     html += '</div>';
                     content.innerHTML = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+                    this.addLinkHandlers();
 
                 } catch (e) {
                     if (e.message && e.message.indexOf('superseded') !== -1) return;
@@ -1107,12 +1278,99 @@
                 return div.innerHTML;
             },
 
+            addLinkHandlers() {
+                const content = document.getElementById('content-area');
+                if (!content) return;
+                const links = content.querySelectorAll('a');
+                links.forEach(function(a) {
+                    if (a.dataset.redditLinkHandled) return;
+                    a.dataset.redditLinkHandled = 'true';
+                    a.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const href = a.getAttribute('href');
+                        if (!href || href.indexOf('#') === 0 || href.indexOf('javascript:') === 0 || href.indexOf('data:') === 0) return;
+                        let url = href;
+                        if (url.indexOf('http') !== 0) {
+                            try {
+                                url = new URL(url, 'https://www.reddit.com').href;
+                            } catch (_) {
+                                return;
+                            }
+                        }
+                        ui.saveReturnState();
+                        window.location.href = 'browser.html?lite=true&return=/reddit.html&url=' + encodeURIComponent(url);
+                    });
+                });
+            },
+
             handleEnter(e) {
                 if (e.key === 'Enter') this.loadCurrentSub();
             },
 
             goBack() {
                 this.loadCurrentSub();
+            },
+
+            saveReturnState() {
+                const content = document.getElementById('content-area');
+                const state = {
+                    currentSub: this.currentSub,
+                    currentThread: this.currentThread,
+                    afterToken: this.afterToken,
+                    scrollTop: content ? content.scrollTop : 0,
+                    savedAt: Date.now()
+                };
+                try {
+                    localStorage.setItem('reddit_return_state', JSON.stringify(state));
+                } catch (e) {
+                    console.warn('Failed to save return state:', e);
+                }
+            },
+
+            restoreReturnState() {
+                try {
+                    const raw = localStorage.getItem('reddit_return_state');
+                    if (!raw) return false;
+                    localStorage.removeItem('reddit_return_state');
+                    const state = JSON.parse(raw);
+                    if (!state || !state.currentSub) return false;
+                    if (state.savedAt && Date.now() - state.savedAt > 600000) return false;
+
+                    document.getElementById('sub-input').value = state.currentSub;
+                    this.currentSub = state.currentSub;
+                    this.afterToken = state.afterToken || null;
+                    this.currentThread = state.currentThread || null;
+                    this.renderSidebar();
+
+                    if (this.currentThread) {
+                        document.getElementById('back-btn').style.display = 'block';
+                        this.loadThread(this.currentThread).then(() => {
+                            const content = document.getElementById('content-area');
+                            if (content && state.scrollTop) content.scrollTop = state.scrollTop;
+                        });
+                    } else {
+                        document.getElementById('back-btn').style.display = 'none';
+                        this.loadCurrentSub().then(() => {
+                            const content = document.getElementById('content-area');
+                            if (content && state.scrollTop) content.scrollTop = state.scrollTop;
+                        });
+                    }
+                    return true;
+                } catch (e) {
+                    console.warn('Failed to restore return state:', e);
+                    return false;
+                }
+            },
+
+            showRateLimitMessage() {
+                const msg = document.getElementById('rate-limit-message');
+                if (msg) msg.style.display = 'block';
+            },
+
+            hideRateLimitMessage() {
+                const msg = document.getElementById('rate-limit-message');
+                if (msg) msg.style.display = 'none';
             },
 
             closeModal(id) {

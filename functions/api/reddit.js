@@ -35,17 +35,22 @@ export async function onRequest(context) {
         try {
             const cached = await cache.match(cacheKey);
             if (cached) {
-                return withCors(cached);
+                const isHtml = (cached.headers.get('content-type') || '').toLowerCase().includes('text/html');
+                const isFeed = target.pathname.endsWith('.rss') || target.pathname.endsWith('.json');
+                if (!isHtml || !isFeed) {
+                    return withCors(cached);
+                }
             }
         } catch (e) {
             console.error("Cache read failed:", e);
         }
     }
 
+    const isFeedRequest = target.pathname.endsWith('.rss') || target.pathname.endsWith('.json');
     // Choose TTL by content type. RSS feeds change quickly; images rarely do.
-    const feedLike = target.pathname.endsWith('.rss') || target.pathname.startsWith('/r/');
+    const feedLike = target.pathname.endsWith('.rss') || target.pathname.endsWith('.json') || target.pathname.startsWith('/r/');
     const imageLike = /\.(jpeg|jpg|png|gif|webp|avif)($|\?)/i.test(target.pathname + target.search);
-    const maxAge = imageLike ? 300 : feedLike ? 60 : 30;
+    const maxAge = imageLike ? 300 : feedLike ? 600 : 30;
 
     // Reddit aggressively blocks non-browser user agents and cloud IPs.
     // We send a full set of modern Chrome headers to look as browser-like as possible.
@@ -68,7 +73,7 @@ export async function onRequest(context) {
     // For feeds, prefer old.reddit.com because www.reddit.com aggressively
     // rate-limits shared cloud IPs. Keep the requested URL as a fallback.
     const urlsToTry = [targetUrl];
-    if (feedLike && (target.hostname === 'www.reddit.com' || target.hostname === 'reddit.com')) {
+    if (target.pathname.endsWith('.rss') && (target.hostname === 'www.reddit.com' || target.hostname === 'reddit.com')) {
         const oldUrl = new URL(targetUrl);
         oldUrl.hostname = 'old.reddit.com';
         urlsToTry.unshift(oldUrl.toString());
@@ -90,6 +95,12 @@ export async function onRequest(context) {
                 lastResponse = response;
 
                 if (response.status === 200) {
+                    const isHtml = (response.headers.get('content-type') || '').toLowerCase().includes('text/html');
+                    if (isHtml && isFeedRequest) {
+                        lastResponse = response;
+                        break;
+                    }
+
                     if (cache && cacheKey) {
                         try {
                             // Split the body stream so we can cache one copy and return the other.
@@ -177,9 +188,9 @@ function computeRetryDelay(response, attempt) {
         if (retryAfter) {
             const seconds = parseInt(retryAfter, 10);
             if (!isNaN(seconds) && seconds > 0) {
-                return Math.min(seconds * 1000, 10000);
+                return Math.min(seconds * 1000, 60000);
             }
         }
     }
-    return Math.min(1000 * Math.pow(2, attempt), 8000);
+    return Math.min(2000 * Math.pow(2, attempt), 15000);
 }
