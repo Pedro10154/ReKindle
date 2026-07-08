@@ -1250,8 +1250,10 @@
 
         <div id="app-layout">
             <div class="room-header">
-                <div id="chat-tab" class="room-tab active" onclick="switchKindlechatTab('chat')" data-i18n="kindlechat.tab.chat">KindleChat</div>
-                <div id="gallery-tab" class="room-tab" onclick="switchKindlechatTab('gallery')" data-i18n="kindlechat.tab.gallery">Gallery</div>
+                <div id="chat-tab" class="room-tab active" onclick="switchKindlechatTab('chat')"
+                    data-i18n="kindlechat.tab.chat">KindleChat</div>
+                <div id="gallery-tab" class="room-tab" onclick="switchKindlechatTab('gallery')"
+                    data-i18n="kindlechat.tab.gallery">Gallery</div>
             </div>
 
             <div id="chat-view">
@@ -1309,7 +1311,8 @@
                     <div id="gallery-grid" class="gallery-grid">
                     </div>
                     <div id="gallery-load-more" class="gallery-load-more" style="display:none;">
-                        <button id="gallery-load-more-btn" onclick="loadMoreGallery()" data-i18n="kindlechat.gallery.load_more">Load Older</button>
+                        <button id="gallery-load-more-btn" onclick="loadMoreGallery()"
+                            data-i18n="kindlechat.gallery.load_more">Load Older</button>
                     </div>
                 </div>
             </div>
@@ -1317,7 +1320,8 @@
 
         <!-- GUEST OVERLAY HTML -->
         <div id="guest-overlay">
-            <h2 id="guest-overlay-title" data-i18n="kindlechat.guest_overlay">You need to be logged in to use KindleChat</h2>
+            <h2 id="guest-overlay-title" data-i18n="kindlechat.guest_overlay">You need to be logged in to use KindleChat
+            </h2>
             <p id="guest-overlay-message" style="font-size: 0.9rem; color: #666; margin: 10px 0; max-width: 300px;"></p>
             <br>
             <button class="sys-btn" onclick="window.location.href='index?login=true'"
@@ -1377,8 +1381,10 @@
                 <div style="margin: 15px 0;">
                     <label style="display:block; font-size:0.9rem; font-weight:bold; margin-bottom:4px;"
                         data-i18n="kindlechat.settings.trans_lang">Translation Language</label>
-                    <select id="setting-translation-lang" style="width:100%; border:2px solid black; border-radius:0; padding:6px; font-family:inherit; font-size:0.9rem; background:white;">
-                        <option value="auto" data-i18n="kindlechat.settings.trans_lang_auto">Auto (System Language)</option>
+                    <select id="setting-translation-lang"
+                        style="width:100%; border:2px solid black; border-radius:0; padding:6px; font-family:inherit; font-size:0.9rem; background:white;">
+                        <option value="auto" data-i18n="kindlechat.settings.trans_lang_auto">Auto (System Language)
+                        </option>
                         <option value="en">English</option>
                         <option value="es">Español</option>
                         <option value="pt">Português</option>
@@ -1390,7 +1396,8 @@
                         <option value="zh">中文</option>
                         <option value="vi">Tiếng Việt</option>
                     </select>
-                    <div style="font-size:0.8rem; color:#666; margin-top:4px;" data-i18n="kindlechat.settings.trans_lang_desc">
+                    <div style="font-size:0.8rem; color:#666; margin-top:4px;"
+                        data-i18n="kindlechat.settings.trans_lang_desc">
                         Choose an alternative language for translations. "Auto" matches your system language.</div>
                 </div>
 
@@ -1649,7 +1656,7 @@
                 currentUsername = (user.email || user.uid).split('@')[0];
 
                 // Check active timeout and show banner
-                rtdb.ref('timeouts/' + user.uid).once('value').then(function(snap) {
+                rtdb.ref('timeouts/' + user.uid).once('value').then(function (snap) {
                     var t = snap.val();
                     if (t && t.until > Date.now()) {
                         var remaining = Math.ceil((t.until - Date.now()) / 60000);
@@ -2517,9 +2524,12 @@
             if (chatTab) chatTab.classList.add('active');
             if (galleryTab) galleryTab.classList.remove('active');
             galleryState.open = false;
-            if (galleryRemovedHandler) {
-                artIndexRef.off('child_removed', galleryRemovedHandler);
+
+            // Fix: Detach from the scoped query
+            if (galleryRemovedHandler && galleryLiveQuery) {
+                galleryLiveQuery.off('child_removed', galleryRemovedHandler);
                 galleryRemovedHandler = null;
+                galleryLiveQuery = null;
             }
         }
 
@@ -2532,10 +2542,15 @@
             }
         }
 
+        // var galleryLiveQuery = null; 
+
+        var galleryLiveQuery = null;
+
         function attachGalleryRemovedListener() {
             if (galleryRemovedHandler) return;
             var grid = document.getElementById('gallery-grid');
             if (!grid) return;
+
             galleryRemovedHandler = function (snap) {
                 var msgId = snap.key;
                 var item = grid.querySelector('.gallery-item[data-msg-id="' + msgId + '"]');
@@ -2544,7 +2559,10 @@
                     grid.innerHTML = '<div class="gallery-empty" data-i18n="kindlechat.gallery.empty">No art posted yet.</div>';
                 }
             };
-            artIndexRef.on('child_removed', galleryRemovedHandler);
+
+            // Fix: Listen to a scoped query instead of the bare reference
+            galleryLiveQuery = artIndexRef.orderByChild('timestamp').limitToLast(galleryState.batchSize);
+            galleryLiveQuery.on('child_removed', galleryRemovedHandler);
         }
 
         function isGalleryArtMessage(msg) {
@@ -3661,7 +3679,7 @@
 
             checkRules(function () {
                 // Timeout check
-                rtdb.ref('timeouts/' + currentUser.uid).once('value').then(function(snap) {
+                rtdb.ref('timeouts/' + currentUser.uid).once('value').then(function (snap) {
                     var t = snap.val();
                     console.log('[Timeout check] Data:', t);
                     if (t && t.until > Date.now()) {
@@ -3671,7 +3689,7 @@
                         return;
                     }
                     doSendMessage(inputEl, text);
-                }).catch(function(err) {
+                }).catch(function (err) {
                     console.error('[Timeout check] Error reading timeout:', err && err.code ? err.code : err);
                     doSendMessage(inputEl, text);
                 });
@@ -3681,57 +3699,57 @@
         function doSendMessage(inputEl, text) {
             if (isSendingMessage) return;
             isSendingMessage = true;
-                markSendBusy();
-                setTimeout(function () { isSendingMessage = false; }, 3000); // failsafe unlock
+            markSendBusy();
+            setTimeout(function () { isSendingMessage = false; }, 3000); // failsafe unlock
 
-                // SPAM PROTECTION + MODERATION: Enforced via Cloudflare Worker
-                var tokenSource = socialAuth.currentUser || currentUser;
-                console.log('[KindleChat] Post token source:', tokenSource === socialAuth.currentUser ? 'social' : 'main', 'socialAuth.currentUser:', !!socialAuth.currentUser, 'currentUser:', !!currentUser);
-                tokenSource.getIdToken(true).then(function (token) {
-                    var bodyObj = { type: 'kindlechat', text: text };
-                    if (replyTarget) {
-                        bodyObj.replyTo = {
-                            msgId: replyTarget.msgId,
-                            uid: replyTarget.uid,
-                            username: replyTarget.username,
-                            text: (replyTarget.text || '').substring(0, 120)
-                        };
-                    }
-                    return fetch(MODERATION_WORKER_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': 'Bearer ' + token
-                        },
-                        body: JSON.stringify(bodyObj)
-                    }).then(function (resp) { return resp.json(); });
-                }).then(function (result) {
-                    if (result.allowed === false) {
-                        var waitSec = Math.ceil((result.retryAfter || 20000) / 1000);
-                        showModal('Please wait ' + waitSec + ' seconds before posting again.', false);
-                        resetSendState();
-                        return;
-                    }
-                    if (result.error) {
-                        resetSendState();
-                        showModal(result.error, false);
-                        return;
-                    }
-                    inputEl.value = '';
-                    replyTarget = null;
+            // SPAM PROTECTION + MODERATION: Enforced via Cloudflare Worker
+            var tokenSource = socialAuth.currentUser || currentUser;
+            console.log('[KindleChat] Post token source:', tokenSource === socialAuth.currentUser ? 'social' : 'main', 'socialAuth.currentUser:', !!socialAuth.currentUser, 'currentUser:', !!currentUser);
+            tokenSource.getIdToken(true).then(function (token) {
+                var bodyObj = { type: 'kindlechat', text: text };
+                if (replyTarget) {
+                    bodyObj.replyTo = {
+                        msgId: replyTarget.msgId,
+                        uid: replyTarget.uid,
+                        username: replyTarget.username,
+                        text: (replyTarget.text || '').substring(0, 120)
+                    };
+                }
+                return fetch(MODERATION_WORKER_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify(bodyObj)
+                }).then(function (resp) { return resp.json(); });
+            }).then(function (result) {
+                if (result.allowed === false) {
+                    var waitSec = Math.ceil((result.retryAfter || 20000) / 1000);
+                    showModal('Please wait ' + waitSec + ' seconds before posting again.', false);
                     resetSendState();
-                    if (TRANSLATION_WORKER_URL) {
-                        fireTranslationRequest(currentUser.uid, text, result.key, 1);
-                    }
-                }).catch(function (e) {
+                    return;
+                }
+                if (result.error) {
                     resetSendState();
-                    console.error('Error posting message:', e);
-                    if (e && e.code === 'PERMISSION_DENIED') {
-                        showModal('Unable to post. This may be due to a missing age-verification or account restriction. Please sign out and back in, or contact support.', false);
-                    } else {
-                        showModal('Unable to post: ' + (e && e.message ? e.message : 'Unknown error') + '. Please try again.', false);
-                    }
-                });
+                    showModal(result.error, false);
+                    return;
+                }
+                inputEl.value = '';
+                replyTarget = null;
+                resetSendState();
+                if (TRANSLATION_WORKER_URL) {
+                    fireTranslationRequest(currentUser.uid, text, result.key, 1);
+                }
+            }).catch(function (e) {
+                resetSendState();
+                console.error('Error posting message:', e);
+                if (e && e.code === 'PERMISSION_DENIED') {
+                    showModal('Unable to post. This may be due to a missing age-verification or account restriction. Please sign out and back in, or contact support.', false);
+                } else {
+                    showModal('Unable to post: ' + (e && e.message ? e.message : 'Unknown error') + '. Please try again.', false);
+                }
+            });
         }
 
 
@@ -3995,7 +4013,7 @@
         function timeoutUser(targetUid, targetName) {
             if (!currentUser || !isCurrentUserMod || !isModeratorMode) return;
             if (targetUid === currentUser.uid) return;
-            showModTimeoutModal(targetUid, targetName, function(hours, reason) {
+            showModTimeoutModal(targetUid, targetName, function (hours, reason) {
                 var until = Date.now() + (hours * 3600000);
                 var updates = {};
                 var logKey = rtdb.ref('mod_actions').push().key;
@@ -4017,9 +4035,9 @@
                     createdAt: firebase.database.ServerValue.TIMESTAMP,
                     undone: false
                 };
-                rtdb.ref().update(updates).then(function() {
+                rtdb.ref().update(updates).then(function () {
                     showModal('User timed out for ' + hours + ' hour(s).');
-                }).catch(function(e) {
+                }).catch(function (e) {
                     showModal('Timeout failed: ' + (e.message || e));
                 });
             });
