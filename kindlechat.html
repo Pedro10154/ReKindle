@@ -389,6 +389,11 @@
             opacity: 1.0;
         }
 
+        .react-btn .react-icon {
+            display: inline-block;
+            transform: translateY(-1px);
+        }
+
         /* DELETE BUTTON (Admin) - matches reaction button style */
         .del-btn {
             width: 20px;
@@ -442,6 +447,75 @@
         .report-btn:hover {
             opacity: 1.0;
             background: #ffe6e6;
+        }
+
+        /* REPLY BUTTON - matches reaction button style */
+        .reply-btn {
+            width: 20px;
+            height: 20px;
+            border: 1px solid black;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            text-align: center;
+            line-height: 18px;
+            font-size: 0.9rem;
+            box-shadow: 1px 1px 0 #999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+            flex-shrink: 0;
+            opacity: 0.5;
+            color: #0066cc;
+            margin-left: 4px;
+        }
+
+        .reply-btn:hover {
+            opacity: 1.0;
+            background: #e6f2ff;
+        }
+
+        .reply-btn .reply-icon {
+            display: inline-block;
+            transform: translateY(1px);
+        }
+
+        /* Reply context preview shown above replies */
+        .reply-context {
+            margin-bottom: 4px;
+            padding: 5px 10px;
+            border: 2px solid black;
+            border-radius: 8px;
+            background: white;
+            color: #555;
+            box-shadow: 2px 2px 0px #ccc;
+            font-size: 0.75rem;
+            max-width: 80%;
+            display: inline-block;
+            box-sizing: border-box;
+            cursor: pointer;
+            overflow: hidden;
+            opacity: 0.75;
+        }
+
+        .reply-context-author {
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+
+        .reply-context-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .msg.self .reply-context {
+            text-align: right;
+            background: black;
+            color: white;
+            border-color: black;
+            box-shadow: 2px 2px 0px #666;
         }
 
         /* AVATAR & MSG-ROW */
@@ -1302,6 +1376,7 @@
         var kcTransAddedHandler = null;   // translations child_added handler
         var kcTransChangedHandler = null; // translations child_changed handler
         var langTranslations = {};        // Cache for per-language translations from new RTDB path
+        var replyTarget = null;           // Active reply target for message input
 
         function markAllAsRead() {
             // No-op: only general chat remains, no sidebar/unread tracking needed.
@@ -2050,6 +2125,7 @@
             oldestGeneralTimestamp = null;
             isLoadingMore = false;
             noMoreGeneralMessages = false;
+            replyTarget = null;
 
             // Disable input while loading
             setChatInputEnabled(false);
@@ -2433,6 +2509,73 @@
             });
         }
 
+        // --- REPLY FUNCTIONS ---
+        function handleReplyClick(btn) {
+            var msgId = btn.getAttribute('data-msg-id');
+            var uid = btn.getAttribute('data-uid');
+            var contextText = btn.getAttribute('data-context');
+            var contextType = btn.getAttribute('data-context-type');
+            if (!msgId || !uid) return;
+
+            // Try to resolve username from cache or fall back to fetching it
+            var username = null;
+            if (uid === currentUser.uid) {
+                username = currentUsername;
+            } else if (window.rekindleCardCache && window.rekindleCardCache[uid] && window.rekindleCardCache[uid].card) {
+                username = window.rekindleCardCache[uid].card.username;
+            }
+
+            if (username) {
+                startReply(msgId, uid, username, contextText, contextType);
+            } else if (typeof window.rekindleFetchUserCard === 'function') {
+                window.rekindleFetchUserCard(rtdb, uid, function (card) {
+                    if (card && card.username) {
+                        startReply(msgId, uid, card.username, contextText, contextType);
+                    } else {
+                        startReply(msgId, uid, uid.substring(0, 8), contextText, contextType);
+                    }
+                });
+            } else {
+                startReply(msgId, uid, uid.substring(0, 8), contextText, contextType);
+            }
+        }
+
+        function startReply(msgId, uid, username, contextText, contextType) {
+            replyTarget = {
+                msgId: msgId,
+                uid: uid,
+                username: username,
+                text: contextText || '',
+                type: contextType || 'text'
+            };
+
+            var input = document.getElementById('msg-input');
+            var prefix = '@' + username + ' ';
+            input.value = prefix;
+            input.focus();
+        }
+
+        function scrollToReplyMessage(msgId) {
+            if (window.event) window.event.stopPropagation();
+            var msgEl = document.querySelector('.msg[data-msg-id="' + msgId + '"]');
+            if (!msgEl) {
+                showModal('Original message not loaded.', false);
+                return;
+            }
+            msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            var bubble = msgEl.querySelector('.msg-bubble');
+            if (bubble) {
+                var originalBorder = bubble.style.borderColor;
+                var originalShadow = bubble.style.boxShadow;
+                bubble.style.borderColor = 'black';
+                bubble.style.boxShadow = '0 0 10px yellow';
+                setTimeout(function () {
+                    bubble.style.borderColor = originalBorder;
+                    bubble.style.boxShadow = originalShadow;
+                }, 1500);
+            }
+        }
+
         function openUserProfile(uid, username) {
             // New messages have uid — open directly (like topics)
             if (uid) {
@@ -2455,10 +2598,85 @@
             });
         }
 
+        function getMessageInsertionInfo(msg, msgId, prepend, beforeNode, history) {
+            if (prepend) {
+                return { append: false, beforeNode: history.firstChild, index: 0 };
+            }
+            if (beforeNode) {
+                var existingMsgs = history.querySelectorAll('.msg');
+                var idx = Array.prototype.indexOf.call(existingMsgs, beforeNode);
+                return { append: false, beforeNode: beforeNode, index: idx >= 0 ? idx : 0 };
+            }
+            if (typeof msg.timestamp !== 'number') {
+                return { append: true, beforeNode: null, index: null };
+            }
+
+            var existingMsgs = history.querySelectorAll('.msg[data-ts]');
+            for (var i = 0; i < existingMsgs.length; i++) {
+                var ts = parseFloat(existingMsgs[i].dataset.ts);
+                if (!isNaN(ts) && ts > msg.timestamp) {
+                    return { append: false, beforeNode: existingMsgs[i], index: i };
+                }
+            }
+            return { append: true, beforeNode: null, index: existingMsgs.length };
+        }
+
+        function shouldShowReplyContext(replyTo, insertionInfo, history) {
+            if (!replyTo || !replyTo.msgId) return false;
+            if (insertionInfo.index === null) return true;
+
+            var originalMsgId = replyTo.msgId;
+            var existingMsgs = history.querySelectorAll('.msg');
+            var originalIdx = -1;
+            for (var i = 0; i < existingMsgs.length; i++) {
+                if (existingMsgs[i].dataset.msgId === originalMsgId) {
+                    originalIdx = i;
+                    break;
+                }
+            }
+
+            if (originalIdx === -1) return true;
+
+            var insertIndex = insertionInfo.index;
+            var distance;
+            if (insertionInfo.append) {
+                distance = insertIndex - originalIdx;
+            } else {
+                if (originalIdx < insertIndex) {
+                    distance = insertIndex - originalIdx;
+                } else {
+                    distance = originalIdx + 1 - insertIndex;
+                }
+            }
+
+            return distance > 5;
+        }
+
+        function buildReplyContextHtml(replyTo, msgId) {
+            if (!replyTo || !replyTo.msgId) return '';
+
+            var username = replyTo.username || 'unknown';
+            var text = censorText(replyTo.text || '');
+            var snippet = escapeHtml(text.substring(0, 80));
+            if (text.length > 80) snippet += '...';
+
+            var safeOriginalMsgId = (replyTo.msgId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            var safeUsername = escapeHtml(username);
+
+            return '<div class="reply-context" onclick="scrollToReplyMessage(\'' + safeOriginalMsgId + '\')">' +
+                '<div class="reply-context-author">@' + safeUsername + '</div>' +
+                '<div class="reply-context-text">' + snippet + '</div>' +
+                '</div>';
+        }
+
         function renderMessage(msg, msgId, prepend, beforeNode) {
             var history = document.getElementById('chat-history');
             var div = document.createElement('div');
             var toggleBtnHtml = '';
+
+            // Determine where this message will be inserted so we can decide
+            // whether a reply context preview is needed.
+            var insertionInfo = getMessageInsertionInfo(msg, msgId, prepend, beforeNode, history);
 
             var isSelf = currentUser && (
                 (msg.uid && msg.uid === currentUser.uid) ||
@@ -2515,7 +2733,7 @@
 
             // REPORT BUTTON (visible to all authenticated users) - circular button like react-btn
             var reportButton = '';
-            if (currentUser && msg.uid && msg.uid !== currentUser.uid) {
+            if (currentUser && msg.uid && msg.uid !== currentUser.uid && msg.uid !== 'xEtAch5i5tdiMDTOnL8dXFxM5Nt1') {
                 var safeMsgId = msgId.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
                 var safeReportedUid = (msg.uid || '').replace(/\\/g, "\\\\").replace(/'/g, "\\'");
                 var msgSnapshot = msg.text || '';
@@ -2540,6 +2758,20 @@
             var bubbleContent = '';
             var isSpecialMessage = false;
             var messageText = msg.text || '';
+            var rawMessageText = msg.text || '';
+            var replyContextText = rawMessageText;
+            if (msg.is_pixel_art) {
+                replyContextText = rawMessageText ? '[Pixel Art] ' + rawMessageText : '[Pixel Art]';
+            } else if (msg.is_flipnote) {
+                replyContextText = rawMessageText ? '[Flipbook] ' + rawMessageText : '[Flipbook]';
+            } else if (msg.is_game_link) {
+                replyContextText = '[Game Link]';
+            } else if (msg.is_reaction_image) {
+                replyContextText = '[ASCII Reaction]';
+            }
+            if (replyContextText.length > 120) {
+                replyContextText = replyContextText.substring(0, 120) + '...';
+            }
 
             // Censor Profanity Logic (Always enforced)
             if (messageText) {
@@ -2676,7 +2908,12 @@
             // Theme injection now handled asynchronously by resolveMessageAuthor
 
             var reactButton = (currentUser)
-                ? '<div class="react-btn" onclick="openReactionTarget(\'' + msgId + '\', this, event)">+</div>'
+                ? '<div class="react-btn" onclick="openReactionTarget(\'' + msgId + '\', this, event)"><span class="react-icon">+</span></div>'
+                : '';
+
+            var safeContextText = escapeHtml(replyContextText).replace(/\n/g, ' ').replace(/\r/g, '');
+            var replyButton = (currentUser && msg.uid && msg.uid !== currentUser.uid)
+                ? '<div class="reply-btn" data-msg-id="' + escapeHtml(msgId) + '" data-uid="' + safeUid + '" data-context="' + safeContextText + '" data-context-type="text" onclick="handleReplyClick(this)" title="Reply"><span class="reply-icon">↩</span></div>'
                 : '';
 
             // Save button for pixel art (appears next to reaction button)
@@ -2688,13 +2925,19 @@
             // TRANSLATION BUTTON (Client-side fallback) - REMOVED for special messages
             var transBtnHtml = (isSpecialMessage || msg.is_pixel_art) ? '' : toggleBtnHtml;
 
+            var replyContextHtml = '';
+            if (msg.replyTo && shouldShowReplyContext(msg.replyTo, insertionInfo, history)) {
+                replyContextHtml = buildReplyContextHtml(msg.replyTo, msgId);
+            }
+
             div.innerHTML = '<div class="msg-meta">' + nameHtml + '<span>' + timeStr + '</span>' + transBtnHtml + modControlsHtml + '</div>' +
+                replyContextHtml +
                 '<div class="msg-row">' +
                 '<canvas id="' + avatarId + '" class="msg-avatar" width="32" height="32" onclick="openUserProfile(\'' + safeUid + '\', \'' + safeUser + '\')"></canvas>' +
                 '<div style="display:flex; align-items:center; min-width: 0;">' +
-                (isSelf ? reactButton + reportButton + saveButton + adminControlsHtml : '') +
+                (isSelf ? reactButton + replyButton + reportButton + saveButton + adminControlsHtml : '') +
                 bubbleContent +
-                (isSelf ? '' : reactButton + reportButton + saveButton + adminControlsHtml) +
+                (isSelf ? '' : reactButton + replyButton + reportButton + saveButton + adminControlsHtml) +
                 '</div>' +
                 '</div>';
 
@@ -2746,30 +2989,10 @@
 
             if (existing) {
                 history.replaceChild(div, existing);
-            } else if (prepend) {
-                history.insertBefore(div, history.firstChild);
-            } else if (beforeNode) {
-                history.insertBefore(div, beforeNode);
-            } else {
-                // Insert in timestamp order instead of blindly appending.
-                // Firebase's limitToLast(50) listener fires child_added for the
-                // next older message when a newer one is deleted; appending it
-                // would make it look like a brand new message at the bottom.
-                var inserted = false;
-                if (typeof msg.timestamp === 'number') {
-                    var existingMsgs = history.querySelectorAll('.msg[data-ts]');
-                    for (var i = 0; i < existingMsgs.length; i++) {
-                        var ts = parseFloat(existingMsgs[i].dataset.ts);
-                        if (!isNaN(ts) && ts > msg.timestamp) {
-                            history.insertBefore(div, existingMsgs[i]);
-                            inserted = true;
-                            break;
-                        }
-                    }
-                }
-                if (!inserted) {
-                    history.appendChild(div);
-                }
+            } else if (insertionInfo.append) {
+                history.appendChild(div);
+            } else if (insertionInfo.beforeNode) {
+                history.insertBefore(div, insertionInfo.beforeNode);
             }
 
             renderEmojis(div);
@@ -2814,6 +3037,15 @@
                 text = text.replace(/(\n\s*){3,}/g, '\n\n').trim();
             }
 
+            // Force reply @username prefix when replying to a specific message
+            if (replyTarget) {
+                var prefix = '@' + replyTarget.username + ' ';
+                if (text.indexOf(prefix) !== 0) {
+                    text = prefix + text;
+                    inputEl.value = text;
+                }
+            }
+
             if (!text) return;
             if (text.length > 1000) { showModal('Messages cannot exceed 1000 characters.'); return; }
             if (containsUrl(text)) { showModal('Links and URLs are not allowed.'); return; }
@@ -2848,13 +3080,22 @@
                 var tokenSource = socialAuth.currentUser || currentUser;
                 console.log('[KindleChat] Post token source:', tokenSource === socialAuth.currentUser ? 'social' : 'main', 'socialAuth.currentUser:', !!socialAuth.currentUser, 'currentUser:', !!currentUser);
                 tokenSource.getIdToken(true).then(function (token) {
+                    var bodyObj = { type: 'kindlechat', text: text };
+                    if (replyTarget) {
+                        bodyObj.replyTo = {
+                            msgId: replyTarget.msgId,
+                            uid: replyTarget.uid,
+                            username: replyTarget.username,
+                            text: (replyTarget.text || '').substring(0, 120)
+                        };
+                    }
                     return fetch(MODERATION_WORKER_URL, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'Authorization': 'Bearer ' + token
                         },
-                        body: JSON.stringify({ type: 'kindlechat', text: text })
+                        body: JSON.stringify(bodyObj)
                     }).then(function (resp) { return resp.json(); });
                 }).then(function (result) {
                     if (result.allowed === false) {
@@ -2869,6 +3110,7 @@
                         return;
                     }
                     inputEl.value = '';
+                    replyTarget = null;
                     resetSendState();
                     if (TRANSLATION_WORKER_URL) {
                         fireTranslationRequest(currentUser.uid, text, result.key, 1);

@@ -1,5 +1,5 @@
 // 1. Version Bump
-const CACHE_NAME = 'rekindle-os-v9';
+const CACHE_NAME = 'rekindle-os-v10';
 
 // 2. Clean URLs in Cache List (Removed .html from apps)
 const ASSETS_TO_CACHE = [
