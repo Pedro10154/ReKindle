@@ -372,13 +372,14 @@
             }
             if (winner === 'draw') {
                 document.getElementById('status-bar').innerText = window.t ? window.t('tictactoe.msg.draw') : "Draw!";
-            } else if (winner === HUMAN) {
-                document.getElementById('status-bar').innerText = window.t ? window.t('tictactoe.msg.win', { player: HUMAN }) : "You Win!";
-                highlightWin(winLine);
-            } else {
-                document.getElementById('status-bar').innerText = window.t ? window.t('tictactoe.msg.lose', { player: CPU }) : "CPU Wins!";
-                highlightWin(winLine);
-            }
+        } else if (winner === HUMAN) {
+            const template = window.t ? window.t('tictactoe.msg.win') : "${player} Wins!";
+            document.getElementById('status-bar').innerText = template.replace('${player}', HUMAN);
+            highlightWin(winLine);
+        } else {
+            document.getElementById('status-bar').innerText = window.t ? window.t('tictactoe.msg.lose') : "CPU Wins!";
+            highlightWin(winLine);
+        }
             renderBoard();
             flashScreen();
         }
