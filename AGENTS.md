@@ -544,6 +544,21 @@ if (!gameState.players[gameState.host]) {
 
 This keeps the game alive if the host leaves or drops, and lets remaining players finish the match. It is implemented in `liveuno.html`.
 
+### Akinator API (`akinator.html`)
+The Akinator game is no longer a Pages Function. It is served by the standalone Cloudflare Worker at `workers/rekindle-akinator/` and deployed at `https://rekindle-akinator.timjarnott.workers.dev`.
+
+Frontend uses `API_BASE = 'https://rekindle-akinator.timjarnott.workers.dev'` and calls `/start`, `/answer`, `/back`, and `/continue`.
+
+Important notes:
+- Akinator.com sits behind Cloudflare bot protection; server-side calls can be blocked if the upstream IP/headers are flagged.
+- The start endpoint scrapes the Akinator `/game` page. Reliable patterns are:
+  - `session: '...'` (inline JS)
+  - `signature: '...'` (inline JS)
+  - `<p class="question-text" id="question-label">...</p>`
+  - Answer labels from `<a class="li-game" href="#" id="a_yes" onclick="chooseAnswer(0)">...</a>` (and `a_no`, `a_dont_know`, `a_probably`, `a_probaly_not`).
+- Action endpoints: `/answer` (send 0-4), `/cancel_answer` (back), `/exclude` (continue after wrong guess).
+- Supported regions and theme `sid` values: characters=1, objects=2, animals=14.
+
 ## ✅ Best Practices
 -   **Images:** Use **WebP** or **SVG**. They are fully supported and perform best.
 -   **Modals:** Always stick to the `.modal-overlay` / `.modal-box` DOM structure found in `weather.html`.

@@ -448,6 +448,8 @@
         var backButton = document.getElementById('back-btn');
         var resultPhoto = document.getElementById('result-photo');
 
+        var API_BASE = 'https://rekindle-akinator.timjarnott.workers.dev';
+
         function showView(name) {
             views.start.classList.remove('active');
             views.game.classList.remove('active');
@@ -493,7 +495,7 @@
             setLoading(true);
 
             try {
-                var res = await fetch('/api/akinator/start', {
+                var res = await fetch('${API_BASE}/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -560,7 +562,7 @@
             setLoading(true);
 
             try {
-                var res = await fetch('/api/akinator/answer', {
+                var res = await fetch('${API_BASE}/answer', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -594,7 +596,7 @@
             setLoading(true);
 
             try {
-                var res = await fetch('/api/akinator/back', {
+                var res = await fetch('${API_BASE}/back', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -664,7 +666,7 @@
             setLoading(true);
 
             try {
-                var res = await fetch('/api/akinator/answer', {
+                var res = await fetch('${API_BASE}/continue', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -672,8 +674,6 @@
                         childMode: state.childMode,
                         step: state.step,
                         progression: state.progression,
-                        answer: 1,
-                        stepLast: state.stepLast,
                         session: state.session,
                         signature: state.signature
                     })
