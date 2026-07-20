@@ -375,6 +375,32 @@ Add this CSS block **after** your existing `.window` / `.title-bar` rules and **
 
 **Apps already using this fix:** `pool.html`, `pool2p.html`, `circle.html`, `blockblast.html`.
 
+### 6b. Unsupported CSS: `aspect-ratio` and `min()`/`max()`/`clamp()`
+**Constraint:** Chromium 75 does **not** support the `aspect-ratio` property (added Chrome 88) or CSS math functions `min()` / `max()` / `clamp()` (added Chrome 79). `calc()` **is** supported.
+**Solution:** Use explicit `width`/`height` (or padding hacks) instead of `aspect-ratio`, and compute min/max sizing in JavaScript instead of `min()`/`max()`.
+
+### 6c. Fitting a square game canvas + controls vertically (`crossy.html`)
+A canvas styled only with `width: 100%; max-width: 512px` scales with **width** only, so on short screens the canvas + on-screen controls overflow the `95vh` window — and with `body { overflow: hidden; touch-action: none; }` the window cannot be scrolled to reach the controls.
+
+**Pattern:** Size the canvas in JS from the actual leftover vertical space, measuring the other chrome via the DOM so title-bar zoom/padding are accounted for:
+
+```javascript
+function resizeCanvas() {
+    if (!canvas) return;
+    var win = document.querySelector('.window');
+    var content = document.querySelector('.window-content');
+    var maxW = Math.min(content.clientWidth - 30, 512); // content box width, capped
+    var maxWindowH = Math.floor(window.innerHeight * 0.95); // matches .window max-height
+    var othersH = win.offsetHeight - canvas.offsetHeight;   // everything except the canvas
+    var size = Math.floor(Math.min(maxW, maxWindowH - othersH - 8)); // -8 = canvas border
+    if (size < 128) size = 128;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
+}
+```
+
+Call it in init, on `resize`/`orientationchange`/`load`, and with a couple of delayed `setTimeout`s (theme.js may apply title-bar zoom after first paint, changing available height).
+
 ### 7. Firebase Architecture
 The project uses **two separate Firebase projects**. You must know which one your feature targets and update the correct rules file.
 
@@ -558,11 +584,12 @@ Important notes:
   - Answer labels from `<a class="li-game" href="#" id="a_yes" onclick="chooseAnswer(0)">...</a>` (and `a_no`, `a_dont_know`, `a_probably`, `a_probaly_not`).
 - Action endpoints: `/answer` (send 0-4), `/cancel_answer` (back), `/exclude` (continue after wrong guess).
 - Supported regions and theme `sid` values: characters=1, objects=2, animals=14.
-- The worker has a `/debug-start` endpoint (added 2026-07) that returns the raw `/game` HTML (`{status, length, html}`) for diagnosing scrape-pattern drift. Remove it once parsing is confirmed stable.
-- `extractFirst()` picks the **longest** match across all patterns, not the first — the page contains short decoy matches (e.g. `session: '555'`) before the real session/signature values.
-- `/continue` maps to Akinator `/exclude` and **must** send `step_last_proposition` (the rejected guess id from `id_proposition`/`id_base_proposition`), otherwise Akinator repeats the same guess forever. The frontend stores it in `state.stepLast` in `showResult()` and clears it in `updateFromStep()` so a stale id is never sent with `/answer`.
-- Never write fetch URLs as `'${API_BASE}/path'` in the page script — `${...}` inside a plain string is not interpolated (that was the "The string did not match the expected pattern" start error). Use `API_BASE + '/path'`.
-- akinator.com hard-blocks some residential IPs with a Cloudflare 403 even with full browser headers; the worker's Cloudflare egress works. Don't trust local `curl` results for diagnosis — use `/debug-start` on the deployed worker instead.
+- Sessions are short numeric strings (e.g. `'886'`) and the signature is base64 — both appear multiple times in the `/game` HTML. `extractFirst()` picks the **longest** match across all patterns to avoid short decoys.
+- `/continue` maps to Akinator `/exclude` and **must** send `forward_answer: '1'` (per the site's own `continuePartie()` JS) — **not** `step_last_proposition`. Without it, Akinator returns the HTML game page instead of JSON, and the browser's `res.json()` throws "The string did not match the expected pattern."
+- The worker validates every passthrough response with `JSON.parse` and returns a 502 `{error}` if Akinator sends HTML/empty bodies, so the frontend always gets valid JSON.
+- Canonical endpoint params (scraped from the `/game` page inline JS, 2026-07): `/answer` = step, progression, sid, cm, answer, step_last_proposition, session, signature. `/cancel_answer` = step, progression, sid, cm, session, signature. `/exclude` = step, sid, cm, progression, session, signature, forward_answer ('1' = keep playing, '0' = end game).
+- Never write fetch URLs as `'${API_BASE}/path'` in the page script — `${...}` inside a plain string is not interpolated (that was the original "The string did not match the expected pattern" start error). Use `API_BASE + '/path'`.
+- akinator.com hard-blocks some residential IPs with a Cloudflare 403 even with full browser headers; the worker's Cloudflare egress works. Don't trust local `curl` results for diagnosis — debug through the deployed worker instead.
 
 ## ✅ Best Practices
 -   **Images:** Use **WebP** or **SVG**. They are fully supported and perform best.

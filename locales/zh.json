@@ -414,6 +414,8 @@
   "btn.settings": "设置",
   "btn.subscribe": "订阅 / 登录",
   "btn.yes": "是",
+  "calculator.mode.sci": "科学",
+  "calculator.mode.std": "标准",
   "calculator.error": "错误",
   "calculator.title": "计算器",
   "calendar.auth.desc": "登录以同步。",

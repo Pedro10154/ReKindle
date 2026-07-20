@@ -414,6 +414,8 @@
   "btn.settings": "Einstellungen",
   "btn.subscribe": "Abonnieren / Login",
   "btn.yes": "Ja",
+  "calculator.mode.sci": "WISS",
+  "calculator.mode.std": "STD",
   "calculator.error": "Fehler",
   "calculator.title": "Rechner",
   "calendar.auth.desc": "Zum Synchronisieren anmelden.",

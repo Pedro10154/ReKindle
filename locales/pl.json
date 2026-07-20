@@ -414,6 +414,8 @@
   "btn.settings": "Ustawienia",
   "btn.subscribe": "Subskrybuj / Zaloguj",
   "btn.yes": "Tak",
+  "calculator.mode.sci": "NAUK",
+  "calculator.mode.std": "STD",
   "calculator.error": "Błąd",
   "calculator.title": "Kalkulator",
   "calendar.auth.desc": "Zaloguj się, aby zsynchronizować.",

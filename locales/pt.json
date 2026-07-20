@@ -414,6 +414,8 @@
   "btn.settings": "Configurações",
   "btn.subscribe": "Assinar / Login",
   "btn.yes": "Sim",
+  "calculator.mode.sci": "CIE",
+  "calculator.mode.std": "PAD",
   "calculator.error": "Erro",
   "calculator.title": "Calculadora",
   "calendar.auth.desc": "Faça login para sincronizar.",

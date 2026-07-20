@@ -414,6 +414,8 @@
   "btn.settings": "Cài đặt",
   "btn.subscribe": "Đăng ký / Đăng nhập",
   "btn.yes": "Có",
+  "calculator.mode.sci": "KH",
+  "calculator.mode.std": "CB",
   "calculator.error": "Lỗi",
   "calculator.title": "Máy tính",
   "calendar.auth.desc": "Đăng nhập để đồng bộ.",

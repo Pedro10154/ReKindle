@@ -414,6 +414,8 @@
   "btn.settings": "Settings",
   "btn.subscribe": "Subscribe / Login",
   "btn.yes": "Yes",
+  "calculator.mode.sci": "SCI",
+  "calculator.mode.std": "STD",
   "calculator.error": "Error",
   "calculator.title": "Calculator",
   "calendar.auth.desc": "Log in to sync.",

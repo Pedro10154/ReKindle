@@ -32,6 +32,18 @@ export default {
             });
         }
 
+        function passthroughJson(text) {
+            let parsed;
+            try {
+                parsed = JSON.parse(text);
+            } catch (e) {
+                return null;
+            }
+            return new Response(JSON.stringify(parsed), {
+                headers: { "Content-Type": "application/json", ...corsHeaders }
+            });
+        }
+
         let body = {};
         if (request.method === "POST") {
             try {
@@ -66,21 +78,6 @@ export default {
                     deployed: true,
                     path: path,
                     time: new Date().toISOString()
-                }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
-            }
-
-            if (path.endsWith("/debug-start")) {
-                const startBody = "cm=" + (childMode ? "true" : "false") + "&sid=" + sid;
-                const res = await fetch(baseUrl + "/game", {
-                    method: "POST",
-                    headers: akiHeaders,
-                    body: startBody
-                });
-                const html = await res.text();
-                return new Response(JSON.stringify({
-                    status: res.status,
-                    length: html.length,
-                    html: html
                 }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
             }
 
@@ -159,7 +156,9 @@ export default {
                 }
 
                 const text = await res.text();
-                return new Response(text, { headers: { "Content-Type": "application/json", ...corsHeaders } });
+                const out = passthroughJson(text);
+                if (!out) return errorResponse("Akinator returned an unexpected response. Please try again.", 502);
+                return out;
             }
 
             if (path.endsWith("/back")) {
@@ -187,7 +186,9 @@ export default {
                 }
 
                 const text = await res.text();
-                return new Response(text, { headers: { "Content-Type": "application/json", ...corsHeaders } });
+                const out = passthroughJson(text);
+                if (!out) return errorResponse("Akinator returned an unexpected response. Please try again.", 502);
+                return out;
             }
 
             if (path.endsWith("/continue")) {
@@ -202,7 +203,7 @@ export default {
                     cm: childMode ? "true" : "false",
                     session: body.session,
                     signature: body.signature,
-                    step_last_proposition: body.stepLast || ""
+                    forward_answer: "1"
                 });
 
                 const res = await fetch(baseUrl + "/exclude", {
@@ -216,7 +217,9 @@ export default {
                 }
 
                 const text = await res.text();
-                return new Response(text, { headers: { "Content-Type": "application/json", ...corsHeaders } });
+                const out = passthroughJson(text);
+                if (!out) return errorResponse("Akinator returned an unexpected response. Please try again.", 502);
+                return out;
             }
 
             return errorResponse("Unknown action. Use /start, /answer, /back, or /continue.", 404);

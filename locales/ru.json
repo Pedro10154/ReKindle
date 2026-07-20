@@ -414,6 +414,8 @@
   "btn.settings": "Настройки",
   "btn.subscribe": "Подписаться / Войти",
   "btn.yes": "Да",
+  "calculator.mode.sci": "ИНЖ",
+  "calculator.mode.std": "ОБЫЧ",
   "calculator.error": "Ошибка",
   "calculator.title": "Калькулятор",
   "calendar.auth.desc": "Войдите для синхронизации.",
