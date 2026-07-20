@@ -137,10 +137,35 @@
             box-shadow: none;
         }
 
-        .leaderboard-btn {
+        .title-score {
+            font-family: "Courier New", monospace;
+            font-size: 0.8rem;
+            font-weight: bold;
+            background: white;
+            padding: 0 6px;
+            z-index: 2;
+        }
+
+        .title-score-left {
+            position: absolute;
+            left: 40px;
+        }
+
+        .title-right-group {
             position: absolute;
             right: 10px;
             z-index: 2;
+            display: flex;
+            align-items: center;
+            background: white;
+            padding: 0 4px;
+        }
+
+        .title-right-group .title-score {
+            margin-right: 8px;
+        }
+
+        .leaderboard-btn {
             cursor: pointer;
             background: white;
             border: 2px solid black;
@@ -168,22 +193,6 @@
             position: relative;
         }
 
-        .score-board {
-            display: flex;
-            justify-content: space-between;
-            width: 100%;
-            max-width: 320px;
-            margin-bottom: 12px;
-            font-family: "Courier New", monospace;
-            font-weight: bold;
-            font-size: 1rem;
-            border: 2px solid black;
-            padding: 8px 12px;
-            box-shadow: 3px 3px 0 black;
-            background: white;
-            box-sizing: border-box;
-        }
-
         canvas {
             border: 4px solid black;
             background-color: #fff;
@@ -206,7 +215,7 @@
         }
 
         .ctrl-btn {
-            aspect-ratio: 1/1;
+            height: 56px;
             background: white;
             border: 2px solid black;
             font-size: 1.5rem;
@@ -305,13 +314,6 @@
             background: black;
             color: white;
         }
-
-        .help-text {
-            font-size: 0.75rem;
-            text-align: center;
-            margin-top: 10px;
-            color: #333;
-        }
     </style>
     <script src="theme.js?v=18"></script>
 </head>
@@ -322,17 +324,16 @@
         <div class="title-bar">
             <div class="title-stripes"></div>
             <div class="close-box" onclick="window.location.href='index'">X</div>
+            <span class="title-score title-score-left"><span data-i18n="crossy.label.score">Score</span>: <span id="score">0</span></span>
             <span class="title-text" data-i18n="crossy.title">Crossy</span>
-            <button class="leaderboard-btn" onclick="openLeaderboard()"
-                data-i18n="crossy.btn.leaderboard">Leaderboard</button>
+            <div class="title-right-group">
+                <span class="title-score"><span data-i18n="crossy.label.high_score">High</span>: <span id="high-score">0</span></span>
+                <button class="leaderboard-btn" onclick="openLeaderboard()"
+                    data-i18n="crossy.btn.leaderboard">Leaderboard</button>
+            </div>
         </div>
 
         <div class="window-content">
-            <div class="score-board">
-                <span><span data-i18n="crossy.label.score">Score</span>: <span id="score">0</span></span>
-                <span><span data-i18n="crossy.label.high_score">High</span>: <span id="high-score">0</span></span>
-            </div>
-
             <canvas id="gameCanvas" width="256" height="256"></canvas>
 
             <div class="controls">
@@ -341,8 +342,6 @@
                 <div class="ctrl-btn btn-down" onpointerdown="handleInput('ArrowDown', event)">▼</div>
                 <div class="ctrl-btn btn-right" onpointerdown="handleInput('ArrowRight', event)">▶</div>
             </div>
-
-            <div class="help-text" data-i18n="crossy.help">Use arrows to cross roads and rivers.</div>
         </div>
 
         <div id="game-over">
@@ -564,10 +563,31 @@
             });
         }
 
+        function resizeCanvas() {
+            if (!canvas) return;
+            var win = document.querySelector('.window');
+            var content = document.querySelector('.window-content');
+            var maxW = Math.min(content.clientWidth - 30, 512);
+            var maxWindowH = Math.floor(window.innerHeight * 0.95);
+            var othersH = win.offsetHeight - canvas.offsetHeight;
+            var allowedCanvasBox = maxWindowH - othersH;
+            var size = Math.floor(Math.min(maxW, allowedCanvasBox - 8));
+            if (size < 128) size = 128;
+            canvas.style.width = size + 'px';
+            canvas.style.height = size + 'px';
+        }
+
         function initGame() {
             if (window.rekindleApplyWallpaper) window.rekindleApplyWallpaper();
             canvas = document.getElementById('gameCanvas');
             ctx = canvas.getContext('2d');
+
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            window.addEventListener('orientationchange', resizeCanvas);
+            window.addEventListener('load', resizeCanvas);
+            setTimeout(resizeCanvas, 100);
+            setTimeout(resizeCanvas, 500);
 
             loadSpriteSheet();
 
