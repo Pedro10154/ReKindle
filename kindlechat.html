@@ -1540,6 +1540,7 @@
         var isPro = false; // Pro Status
         var unsubscribeMsg = null;
         var oldestGeneralTimestamp = null; // For RTDB pagination
+        var oldestGeneralKey = null;       // Oldest rendered message push-ID; scopes the translations listener
         var isLoadingMore = false; // For pagination
         var noMoreGeneralMessages = false; // True once we've reached the oldest message in RTDB
         var supporterUsers = {}; // Store supporter usernames as object for ES5 compatibility
@@ -2209,6 +2210,25 @@
                         generalDomMsgCount++;
                     }
 
+                    // These messages are older than the scoped translation listener's
+                    // startAt key, so fetch their translations individually on demand
+                    // and re-render any that have one.
+                    var pageLang = getEffectiveTranslationLang();
+                    for (var j = 0; j < batch.length; j++) {
+                        (function (id) {
+                            if (langTranslations[id]) return;
+                            socialRtdb.ref('kindlechat/translations_by_lang/' + pageLang + '/' + id).once('value')
+                                .then(function (transSnap) {
+                                    var transText = transSnap.val();
+                                    if (!transText || currentRoomId !== 'general') return;
+                                    langTranslations[id] = transText;
+                                    generalChatRef.child(id).once('value').then(function (msgSnap) {
+                                        if (msgSnap.val()) renderMessage(msgSnap.val(), id);
+                                    });
+                                });
+                        })(batch[j].id);
+                    }
+
                     if (noMoreGeneralMessages) {
                         showEndOfHistoryMarker(historyEl);
                     }
@@ -2312,6 +2332,7 @@
             window.pixelGridCache = {};
 
             oldestGeneralTimestamp = null;
+            oldestGeneralKey = null;
             isLoadingMore = false;
             noMoreGeneralMessages = false;
             replyTarget = null;
@@ -2338,6 +2359,7 @@
 
             renderedKindlechatIds = {};
             oldestGeneralTimestamp = null;
+            oldestGeneralKey = null;
             noMoreGeneralMessages = false;
 
             // Query last 50 messages ordered by timestamp
@@ -2358,6 +2380,7 @@
                         var data = child.val();
                         var msgId = child.key;
                         renderedKindlechatIds[msgId] = true;
+                        if (oldestGeneralKey === null) oldestGeneralKey = msgId;
 
                         if (typeof data.timestamp === 'number') {
                             if (oldestGeneralTimestamp === null || data.timestamp < oldestGeneralTimestamp) {
@@ -2447,7 +2470,16 @@
 
                 // --- Per-language translation listener ---
                 // Each client only downloads translations for their selected language.
-                generalTransRef = socialRtdb.ref('kindlechat/translations_by_lang/' + getEffectiveTranslationLang());
+                // SCOPED with orderByKey().startAt(oldest rendered push-ID): a bare
+                // listener here syncs the ENTIRE per-language node (~25k entries /
+                // ~1 MB) on every page load, which kills the Kindle browser. Push IDs
+                // sort chronologically, so startAt(oldestGeneralKey) covers the live
+                // window plus all future messages. Paginated older messages fetch
+                // their translations on demand in loadMoreGeneralFromRTDB().
+                var transBaseRef = socialRtdb.ref('kindlechat/translations_by_lang/' + getEffectiveTranslationLang());
+                generalTransRef = oldestGeneralKey
+                    ? transBaseRef.orderByKey().startAt(oldestGeneralKey)
+                    : transBaseRef;
 
                 kcTransAddedHandler = function (childSnap) {
                     if (currentRoomId !== 'general') return;
@@ -2457,7 +2489,7 @@
                     langTranslations[msgId] = text;
                     if (renderedKindlechatIds[msgId]) {
                         generalChatRef.child(msgId).once('value').then(function (msgSnap) {
-                            renderMessage(msgSnap.val(), msgId);
+                            if (msgSnap.val()) renderMessage(msgSnap.val(), msgId);
                         });
                     }
                 };
@@ -2471,7 +2503,7 @@
                     langTranslations[msgId] = text;
                     if (renderedKindlechatIds[msgId]) {
                         generalChatRef.child(msgId).once('value').then(function (msgSnap) {
-                            renderMessage(msgSnap.val(), msgId);
+                            if (msgSnap.val()) renderMessage(msgSnap.val(), msgId);
                         });
                     }
                 };
