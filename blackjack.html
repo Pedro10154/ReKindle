@@ -406,7 +406,7 @@
 
         function placeBet(amount) {
             if (amount > bankroll) {
-                setMessage(window.t ? window.t('blackjack.msg.no_chips') : "Not enough chips!");
+                setMessage(window.t ? window.t('blackjack.msg.no_chips', 'Not enough chips!') : "Not enough chips!");
                 return;
             }
             currentBet = amount;
@@ -427,7 +427,7 @@
             document.getElementById('reset-controls').style.display = 'none';
             document.getElementById('btn-double').disabled = false; // Enable double down at start
 
-            setMessage(window.t ? window.t('blackjack.msg.bet_amount').replace('${amount}', currentBet) : `Bet: $${currentBet}`);
+            setMessage(window.t ? window.t('blackjack.msg.bet_amount', 'Bet amount: ${amount}').replace('${amount}', currentBet) : `Bet: $${currentBet}`);
             renderHands();
 
             // Check for Natural Blackjack
@@ -453,7 +453,7 @@
 
         function doubleDown() {
             if (bankroll < currentBet) {
-                setMessage(window.t ? window.t('blackjack.msg.no_funds_double') : "Not enough funds to double!");
+                setMessage(window.t ? window.t('blackjack.msg.no_funds_double', 'Not enough funds to double!') : "Not enough funds to double!");
                 return;
             }
 
@@ -503,13 +503,13 @@
             const dScore = calculateScore(dealerHand);
 
             if (dScore > 21) {
-                endRound('win', window.t ? window.t('blackjack.msg.dealer_bust') : "Dealer Busts!");
+                endRound('win', window.t ? window.t('blackjack.msg.dealer_bust', 'Dealer Busts!') : "Dealer Busts!");
             } else if (pScore > dScore) {
-                endRound('win', window.t ? window.t('blackjack.msg.win') : "You Win!");
+                endRound('win', window.t ? window.t('blackjack.msg.win', 'You Win!') : "You Win!");
             } else if (dScore > pScore) {
-                endRound('lose', window.t ? window.t('blackjack.msg.lose') : "Dealer Wins");
+                endRound('lose', window.t ? window.t('blackjack.msg.lose', 'You Lose') : "Dealer Wins");
             } else {
-                endRound('push', window.t ? window.t('blackjack.msg.push') : "Push");
+                endRound('push', window.t ? window.t('blackjack.msg.push', 'Push') : "Push");
             }
         }
 
@@ -519,18 +519,18 @@
             document.getElementById('reset-controls').style.display = 'flex';
 
             if (result === 'bust') {
-                setMessage(window.t ? window.t('blackjack.msg.bust') : "Busted! You lose.");
+                setMessage(window.t ? window.t('blackjack.msg.bust', 'Busted! You lose.') : "Busted! You lose.");
                 // Bet already deducted
             } else if (result === 'win') {
-                setMessage(msg || (window.t ? window.t('blackjack.msg.win') : "You Win!"));
+                setMessage(msg || (window.t ? window.t('blackjack.msg.win', 'You Win!') : "You Win!"));
                 // Return bet + winning (2x)
                 // Blackjack pays 3:2? For simplicity keeping it 1:1 here unless requested
                 bankroll += (currentBet * 2);
             } else if (result === 'push') {
-                setMessage(msg || (window.t ? window.t('blackjack.msg.push') : "Push"));
+                setMessage(msg || (window.t ? window.t('blackjack.msg.push', 'Push') : "Push"));
                 bankroll += currentBet; // Return bet
             } else {
-                setMessage(msg || (window.t ? window.t('blackjack.msg.lose') : "You Lose"));
+                setMessage(msg || (window.t ? window.t('blackjack.msg.lose', 'You Lose') : "You Lose"));
             }
 
             currentBet = 0;
@@ -603,7 +603,7 @@
         }
 
         function updateBankDisplay() {
-            document.getElementById('chips-display').innerText = (window.t ? window.t('blackjack.label.bank').replace('${amount}', bankroll) : `Bank: $${bankroll}`);
+            document.getElementById('chips-display').innerText = (window.t ? window.t('blackjack.label.bank', 'Bank: ${amount}').replace('${amount}', bankroll) : `Bank: $${bankroll}`);
             document.getElementById('chips-display').removeAttribute('data-i18n');
         }
 
@@ -614,7 +614,7 @@
             document.getElementById('dealer-cards').innerHTML = '';
             document.getElementById('player-score').innerText = '';
             document.getElementById('dealer-score').innerText = '';
-            setMessage(window.t ? window.t('blackjack.msg.bet') : "Place your bet");
+            setMessage(window.t ? window.t('blackjack.msg.bet', 'Place your bet') : "Place your bet");
         }
 
     </script>

@@ -70,7 +70,7 @@
             box-shadow: var(--shadow);
             display: flex;
             flex-direction: column;
-            flex: 1;
+            flex: 0 1 auto;
             min-height: 550px;
             /* ADAPTIVE HEIGHT */
             max-height: 98vh;
@@ -856,7 +856,24 @@
             const el = document.getElementById(id);
             el.innerHTML = '';
 
+            if (cards.length === 0) return;
+
             let overlap = window.innerWidth >= 800 ? 35 : (window.innerWidth >= 600 ? 30 : 25);
+
+            // Compress the fan when a long cascade would overflow the visible board
+            if (cards.length > 1) {
+                const board = document.querySelector('.game-board');
+                const availH = board.clientHeight - el.offsetTop;
+                const probe = createCardDiv(cards[cards.length - 1]);
+                probe.style.visibility = 'hidden';
+                el.appendChild(probe);
+                const cardH = probe.offsetHeight;
+                el.removeChild(probe);
+                if (availH > cardH) {
+                    const maxOverlap = Math.floor((availH - cardH) / (cards.length - 1));
+                    if (maxOverlap < overlap) overlap = Math.max(8, maxOverlap);
+                }
+            }
 
             cards.forEach((card, index) => {
                 let div = createCardDiv(card);

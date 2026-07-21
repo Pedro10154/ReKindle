@@ -259,7 +259,7 @@
         <div class="window-content" id="screen-menu">
             <h1 style="font-size: 3rem; margin: 10px 0;">CONNECT 4</h1>
             <p>Real-time Multiplayer.</p>
-            <button class="sys-btn" onclick="toggleModeMenu()" id="menu-mode-btn" data-i18n="connect4.btn.mode" data-i18n-args='{"num": 4}' style="width: 200px; margin-bottom: 20px;">Mode: 4</button>
+            <button class="sys-btn" onclick="toggleModeMenu()" id="menu-mode-btn" style="width: 200px; margin-bottom: 20px;">Mode: 4</button>
             <button class="sys-btn" onclick="hostGame()" style="width: 200px;">Host Game</button>
             <button class="sys-btn" onclick="goHome()" style="width: 200px;">Back</button>
         </div>
@@ -277,7 +277,7 @@
             <div id="host-controls" style="display:none; width:100%; margin-top:10px;">
                 <p style="font-size: 0.9rem;">Game starts automatically when an opponent joins.</p>
                 <div style="display:flex; justify-content:center;">
-                    <button class="sys-btn" onclick="toggleModeLobby()" id="lobby-mode-btn" data-i18n="connect4.btn.mode" data-i18n-args='{"num": 4}'>Mode: 4</button>
+                    <button class="sys-btn" onclick="toggleModeLobby()" id="lobby-mode-btn">Mode: 4</button>
                 </div>
             </div>
             <button class="sys-btn" onclick="leaveMatch()">Leave Lobby</button>
@@ -437,7 +437,8 @@
         function toggleModeMenu() {
             lobbyWinLength = lobbyWinLength === 4 ? 5 : 4;
             const btn = document.getElementById('menu-mode-btn');
-            if (btn) btn.innerText = window.t ? window.t('connect4.btn.mode', { num: lobbyWinLength }) : `Mode: ${lobbyWinLength}`;
+            const menuModeTpl = window.t ? window.t('connect4.btn.mode', 'Mode: ${num}') : 'Mode: ${num}';
+            if (btn) btn.innerText = menuModeTpl.replace('${num}', lobbyWinLength);
             
             // Just update the title for aesthetics on the menu screen if t() is available
             const titleStr = window.t ? window.t(`connect4.title.${lobbyWinLength}inrow`) : `${lobbyWinLength} in a Row`;
@@ -572,7 +573,8 @@
                     if (gameState.winLength) {
                         lobbyWinLength = gameState.winLength;
                         const btn = document.getElementById('lobby-mode-btn');
-                        btn.innerText = window.t ? window.t('connect4.btn.mode', { num: lobbyWinLength }) : `Mode: ${lobbyWinLength}`;
+                        const lobbyModeTpl = window.t ? window.t('connect4.btn.mode', 'Mode: ${num}') : 'Mode: ${num}';
+                        btn.innerText = lobbyModeTpl.replace('${num}', lobbyWinLength);
                     }
                 } else if (gameState.status === 'playing' || gameState.status === 'finished') {
                     if (document.getElementById('screen-game').style.display === 'none') {

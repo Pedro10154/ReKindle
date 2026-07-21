@@ -290,7 +290,7 @@
             moves = 0;
             matches = 0;
             const stats = document.getElementById('stats');
-            stats.innerText = window.t ? window.t('memory.label.moves').replace('${n}', 0) : "Moves: 0";
+            stats.innerText = window.t ? window.t('memory.label.moves', 'Moves: ${n}').replace('${n}', 0) : "Moves: 0";
             stats.removeAttribute('data-i18n');
             flippedCards = [];
             isLocked = false;
@@ -332,7 +332,7 @@
             if (flippedCards.length === 2) {
                 moves++;
                 const stats = document.getElementById('stats');
-                stats.innerText = window.t ? window.t('memory.label.moves').replace('${n}', moves) : "Moves: " + moves;
+                stats.innerText = window.t ? window.t('memory.label.moves', 'Moves: ${n}').replace('${n}', moves) : "Moves: " + moves;
                 stats.removeAttribute('data-i18n');
                 checkForMatch();
             }
@@ -373,7 +373,7 @@
         function checkWin() {
             if (matches === SYMBOLS.length) {
                 const stats = document.getElementById('stats');
-                stats.innerText = window.t ? window.t('memory.msg.done').replace('${n}', moves) : "DONE! Moves: " + moves;
+                stats.innerText = window.t ? window.t('memory.msg.done', 'DONE! Moves: ${n}').replace('${n}', moves) : "DONE! Moves: " + moves;
                 stats.removeAttribute('data-i18n');
                 // Flash Window Content
                 const content = document.querySelector('.window-content');

@@ -125,6 +125,18 @@
             margin-left: 10px;
 }
 
+        .header-controls-left {
+            position: absolute;
+            left: 36px;
+            z-index: 2;
+            background: white;
+            display: flex;
+        }
+
+        .header-controls-left > * + * {
+            margin-left: 10px;
+}
+
         .leaderboard-btn {
             background: white;
             border: 2px solid black;
@@ -360,11 +372,13 @@
         <div class="title-bar">
             <div class="title-stripes"></div>
             <div class="close-box" onclick="exitGame()">X</div>
+            <div class="header-controls-left">
+                <button id="undo-btn" class="sys-btn" onclick="undoMove()" disabled="" data-i18n="blockblast.btn.undo">Undo</button>
+                <button class="sys-btn" onclick="resetGame()" data-i18n="blockblast.btn.reset">Reset</button>
+            </div>
             <span class="title-text" data-i18n="blockblast.title">Block Blast</span>
             <div class="header-controls">
                 <button class="leaderboard-btn" onclick="openLeaderboard()" data-i18n="blockblast.btn.leaderboard">Leaderboard</button>
-                <button id="undo-btn" class="sys-btn" onclick="undoMove()" disabled="" data-i18n="blockblast.btn.undo">Undo</button>
-                <button class="sys-btn" onclick="resetGame()" data-i18n="blockblast.btn.reset">Reset</button>
             </div>
         </div>
 

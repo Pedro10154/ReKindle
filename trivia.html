@@ -128,6 +128,21 @@
         }
 
         /* STATS BUTTON */
+        .title-controls {
+            position: absolute;
+            right: 10px;
+            z-index: 2;
+            display: flex;
+        }
+
+        .title-controls > * + * {
+            margin-left: 5px;
+        }
+
+        .title-controls .stats-btn {
+            position: static;
+        }
+
         .stats-btn {
             position: absolute;
             right: 10px;
@@ -558,10 +573,11 @@
             <!-- Home Button -->
             <div class="close-box" onclick="window.location.href='index'">X</div>
             <span class="title-text" data-i18n="trivia.title">Trivia</span>
-            <!-- Stats Button -->
-            <div class="stats-btn" onclick="openStats()" data-i18n="trivia.btn.stats">Stats</div>
-            <!-- Leaderboard Button -->
-            <div class="stats-btn" style="right: 60px;" onclick="openLeaderboard()" data-i18n="trivia.btn.top">Top</div>
+            <!-- Leaderboard & Stats Buttons -->
+            <div class="title-controls">
+                <div class="stats-btn" onclick="openLeaderboard()" data-i18n="trivia.btn.top">Top</div>
+                <div class="stats-btn" onclick="openStats()" data-i18n="trivia.btn.stats">Stats</div>
+            </div>
         </div>
 
         <div class="window-content">

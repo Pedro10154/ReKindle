@@ -304,8 +304,7 @@
     <div class="controls-container">
         <!-- Rendering Controls -->
         <div class="action-row" style="margin-bottom: 10px; flex-wrap: wrap;">
-            <div id="renderModeBtn" class="key-btn action-btn" style="min-width: 170px;" onclick="cycleRenderMode()"
-                data-i18n="doom.lbl.mode" data-i18n-args='{"mode": "Color"}'>
+            <div id="renderModeBtn" class="key-btn action-btn" style="min-width: 170px;" onclick="cycleRenderMode()">
                 Mode: Color</div>
 
             <div style="display: flex; align-items: center; margin-left: 5px;">
@@ -427,8 +426,8 @@
         function cycleRenderMode() {
             renderMode = (renderMode + 1) % MODES.length;
             const btn = document.getElementById('renderModeBtn');
-            const modeName = window.t ? window.t(MODES_KEYS[renderMode]) : MODES[renderMode];
-            const labelTxt = window.t ? window.t('doom.lbl.mode').replace('${mode}', modeName) : "Mode: " + MODES[renderMode];
+            const modeName = window.t ? window.t(MODES_KEYS[renderMode], MODES[renderMode]) : MODES[renderMode];
+            const labelTxt = window.t ? window.t('doom.lbl.mode', 'Mode: ${mode}').replace('${mode}', modeName) : "Mode: " + MODES[renderMode];
             btn.innerText = labelTxt;
 
             // Visual feedback on button
@@ -469,7 +468,7 @@
                 // Instantiating here prevents the JIT-less Kindle engine from hard-crashing during page interpretation
                 wasmMemory = new WebAssembly.Memory({ initial: 108 });
 
-                const downloadingTxt = window.t ? window.t('doom.status.downloading') : "Downloading game data...";
+                const downloadingTxt = window.t ? window.t('doom.status.downloading', 'Downloading game data...') : "Downloading game data...";
                 status.removeAttribute('data-i18n'); // Prevent i18n.js from overwriting this status asynchronously
                 status.innerText = downloadingTxt;
                 const response = await fetch('doom.wasm');
@@ -477,7 +476,7 @@
                 if (!response.ok) throw new Error(`Failed to load doom.wasm: ${response.status}`);
                 const buffer = await response.arrayBuffer();
 
-                const initializingTxt = window.t ? window.t('doom.status.initializing') : "Initializing...";
+                const initializingTxt = window.t ? window.t('doom.status.initializing', 'Initializing...') : "Initializing...";
                 status.removeAttribute('data-i18n');
                 status.innerText = initializingTxt;
 

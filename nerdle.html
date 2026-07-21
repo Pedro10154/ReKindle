@@ -458,11 +458,12 @@
                 const statusBar = document.getElementById('status-bar');
                 if (user) {
                     currentUser = user;
-                    statusBar.innerText = window.t ? window.t('nerdle.status.synced').replace('${email}', user.email) : "Synced: " + user.email;
+                    statusBar.style.display = 'none';
                     statusBar.removeAttribute('data-i18n');
                     loadCloudGame();
                 } else {
-                    statusBar.innerText = window.t ? window.t('nerdle.status.guest') : "Guest Mode (Local)";
+                    statusBar.style.display = '';
+                    statusBar.innerText = window.t ? window.t('nerdle.status.guest', 'Guest Mode (Local)') : "Guest Mode (Local)";
                     statusBar.removeAttribute('data-i18n');
                     loadLocalGame();
                 }

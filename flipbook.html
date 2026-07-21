@@ -657,6 +657,24 @@
                             </svg>
                             <span class="btn-label" data-i18n="flipbook.tool.clear">Clear</span>
                         </button>
+                        <button id="tool-undo" class="sys-btn icon-btn" onclick="undo()"
+                            data-i18n-title="flipbook.tool.undo" title="Undo" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M3 7v6h6"></path>
+                                <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path>
+                            </svg>
+                            <span class="btn-label" data-i18n="flipbook.tool.undo">Undo</span>
+                        </button>
+                        <button id="tool-redo" class="sys-btn icon-btn" onclick="redo()"
+                            data-i18n-title="flipbook.tool.redo" title="Redo" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M21 7v6h-6"></path>
+                                <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"></path>
+                            </svg>
+                            <span class="btn-label" data-i18n="flipbook.tool.redo">Redo</span>
+                        </button>
                     </div>
 
                     <!-- Transport Group -->
@@ -747,6 +765,11 @@
         let savePending = false;
         let subChecked = false;
 
+        // Undo / Redo history
+        let undoStack = [];
+        let redoStack = [];
+        const MAX_HISTORY = 10; // Each entry is at most one 256x256 ImageData (~256KB)
+
         let manifest = [];
         let db, auth, rtdb, socialAuth, currentUser = null;
 
@@ -824,6 +847,20 @@
 
             // Prevent context menu
             canvas.oncontextmenu = (e) => e.preventDefault();
+
+            // Keyboard shortcuts for undo / redo
+            document.addEventListener('keydown', (e) => {
+                if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+                if (e.ctrlKey || e.metaKey) {
+                    if (e.key === 'z' && !e.shiftKey) {
+                        e.preventDefault();
+                        undo();
+                    } else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
+                        e.preventDefault();
+                        redo();
+                    }
+                }
+            });
 
             window.addEventListener('resize', () => {
                 if (document.getElementById('screen-editor').classList.contains('active')) setupCanvas();
@@ -944,6 +981,7 @@
 
             // Initial Frame
             addFrame(true);
+            resetHistory();
 
             showEditor();
             setupCanvas();
@@ -960,6 +998,7 @@
             } else {
                 // Insert after current
                 if (frames.length > 0) saveCurrentFrame();
+                pushUndo({ type: 'insert', index: currentFrameIndex + 1 });
                 frames.splice(currentFrameIndex + 1, 0, newData);
                 frameUrlCache.splice(currentFrameIndex + 1, 0, null);
                 currentFrameIndex++;
@@ -1054,6 +1093,7 @@
             currentAnimationId = id;
             currentFrameIndex = 0;
             onionLoadedIndex = -1;
+            resetHistory();
             showEditor();
             setupCanvas();
             loadCurrentFrameToBuffer();
@@ -1171,6 +1211,99 @@
             return urls;
         }
 
+        // --- UNDO / REDO ---
+        // Action shapes:
+        //   { type:'edit',   index, image }  -> frame content changed (stroke, fill, clear)
+        //   { type:'insert', index }         -> frame was added at index (add / duplicate)
+        //   { type:'delete', index, image }  -> frame was removed from index
+        function pushUndo(action) {
+            undoStack.push(action);
+            if (undoStack.length > MAX_HISTORY) undoStack.shift();
+            redoStack = [];
+            updateUndoRedoButtons();
+        }
+
+        function resetHistory() {
+            undoStack = [];
+            redoStack = [];
+            updateUndoRedoButtons();
+        }
+
+        function snapshotCurrentFrame() {
+            return bufferCtx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+        }
+
+        function undo() {
+            if (isPlaying) stopPlaying();
+            if (undoStack.length === 0) return;
+            saveCurrentFrame();
+            const action = undoStack.pop();
+            if (action.type === 'edit') {
+                redoStack.push({ type: 'edit', index: action.index, image: frames[action.index] });
+                frames[action.index] = action.image;
+                frameUrlCache[action.index] = null;
+                currentFrameIndex = action.index;
+            } else if (action.type === 'insert') {
+                const removed = frames.splice(action.index, 1)[0];
+                frameUrlCache.splice(action.index, 1);
+                redoStack.push({ type: 'delete', index: action.index, image: removed });
+                if (currentFrameIndex >= frames.length) currentFrameIndex = frames.length - 1;
+            } else if (action.type === 'delete') {
+                frames.splice(action.index, 0, action.image);
+                frameUrlCache.splice(action.index, 0, null);
+                redoStack.push({ type: 'insert', index: action.index });
+                currentFrameIndex = action.index;
+            }
+            onionLoadedIndex = -1;
+            loadCurrentFrameToBuffer();
+            renderCanvas();
+            updateUI();
+            updateUndoRedoButtons();
+            triggerAutoSave();
+        }
+
+        function redo() {
+            if (isPlaying) stopPlaying();
+            if (redoStack.length === 0) return;
+            saveCurrentFrame();
+            const action = redoStack.pop();
+            if (action.type === 'edit') {
+                undoStack.push({ type: 'edit', index: action.index, image: frames[action.index] });
+                frames[action.index] = action.image;
+                frameUrlCache[action.index] = null;
+                currentFrameIndex = action.index;
+            } else if (action.type === 'insert') {
+                const removed = frames.splice(action.index, 1)[0];
+                frameUrlCache.splice(action.index, 1);
+                undoStack.push({ type: 'delete', index: action.index, image: removed });
+                if (currentFrameIndex >= frames.length) currentFrameIndex = frames.length - 1;
+            } else if (action.type === 'delete') {
+                frames.splice(action.index, 0, action.image);
+                frameUrlCache.splice(action.index, 0, null);
+                undoStack.push({ type: 'insert', index: action.index });
+                currentFrameIndex = action.index;
+            }
+            onionLoadedIndex = -1;
+            loadCurrentFrameToBuffer();
+            renderCanvas();
+            updateUI();
+            updateUndoRedoButtons();
+            triggerAutoSave();
+        }
+
+        function updateUndoRedoButtons() {
+            const undoBtn = document.getElementById('tool-undo');
+            const redoBtn = document.getElementById('tool-redo');
+            if (undoBtn) {
+                undoBtn.disabled = undoStack.length === 0;
+                undoBtn.style.opacity = undoStack.length === 0 ? '0.4' : '1';
+            }
+            if (redoBtn) {
+                redoBtn.disabled = redoStack.length === 0;
+                redoBtn.style.opacity = redoStack.length === 0 ? '0.4' : '1';
+            }
+        }
+
         // --- DRAWING LOGIC ---
         function getPointerPos(e) {
             const rect = canvas.getBoundingClientRect();
@@ -1189,14 +1322,18 @@
             const pos = getPointerPos(e);
 
             if (currentTool === 'fill') {
-                floodFill(Math.floor(pos.x), Math.floor(pos.y));
-                saveCurrentFrame();
-                renderCanvas();
-                triggerAutoSave();
+                const before = snapshotCurrentFrame();
+                if (floodFill(Math.floor(pos.x), Math.floor(pos.y))) {
+                    pushUndo({ type: 'edit', index: currentFrameIndex, image: before });
+                    saveCurrentFrame();
+                    renderCanvas();
+                    triggerAutoSave();
+                }
                 return;
             }
 
             isDrawing = true;
+            pushUndo({ type: 'edit', index: currentFrameIndex, image: snapshotCurrentFrame() });
             bufferCtx.lineCap = 'round';
             bufferCtx.lineJoin = 'round';
 
@@ -1276,6 +1413,7 @@
 
         function clearFrame() {
             if (isPlaying) stopPlaying();
+            pushUndo({ type: 'edit', index: currentFrameIndex, image: snapshotCurrentFrame() });
             bufferCtx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
             saveCurrentFrame();
             renderCanvas();
@@ -1283,25 +1421,25 @@
 
         // Scanline flood fill: fills the contiguous region of the tapped color
         // with opaque black. Iterative (no recursion) to stay safe on the JIT-less CPU.
+        // Matches on ALPHA ONLY: strokes are opaque black, and their anti-aliased
+        // edges have partial alpha, so an alpha threshold lets the fill flow right
+        // up to (and slightly under) stroke edges with no leftover fringe pixels.
+        // Returns true if any pixels were filled.
         function floodFill(startX, startY) {
-            if (startX < 0 || startX >= CANVAS_SIZE || startY < 0 || startY >= CANVAS_SIZE) return;
+            if (startX < 0 || startX >= CANVAS_SIZE || startY < 0 || startY >= CANVAS_SIZE) return false;
 
             const imgData = bufferCtx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
             const data = imgData.data;
             const startIdx = (startY * CANVAS_SIZE + startX) * 4;
-            const sr = data[startIdx], sg = data[startIdx + 1], sb = data[startIdx + 2], sa = data[startIdx + 3];
 
-            // Already opaque black: nothing to do
-            if (sr === 0 && sg === 0 && sb === 0 && sa === 255) return;
+            // Tapped on a solid stroke pixel: nothing to do
+            if (data[startIdx + 3] >= 240) return false;
 
-            const tolerance = 48;
             function matches(idx) {
-                return Math.abs(data[idx] - sr) <= tolerance &&
-                    Math.abs(data[idx + 1] - sg) <= tolerance &&
-                    Math.abs(data[idx + 2] - sb) <= tolerance &&
-                    Math.abs(data[idx + 3] - sa) <= tolerance;
+                return data[idx + 3] < 240;
             }
 
+            let filled = false;
             const stack = [[startX, startY]];
             while (stack.length > 0) {
                 const p = stack.pop();
@@ -1316,6 +1454,7 @@
                 let spanUp = false, spanDown = false;
                 while (x < CANVAS_SIZE && matches(idx)) {
                     data[idx] = 0; data[idx + 1] = 0; data[idx + 2] = 0; data[idx + 3] = 255;
+                    filled = true;
 
                     if (y > 0) {
                         const up = idx - CANVAS_SIZE * 4;
@@ -1331,6 +1470,7 @@
                 }
             }
             bufferCtx.putImageData(imgData, 0, 0);
+            return filled;
         }
 
         // --- FRAMES ---
@@ -1362,6 +1502,7 @@
             saveCurrentFrame();
             const src = frames[currentFrameIndex];
             const copy = new ImageData(new Uint8ClampedArray(src.data), CANVAS_SIZE, CANVAS_SIZE);
+            pushUndo({ type: 'insert', index: currentFrameIndex + 1 });
             frames.splice(currentFrameIndex + 1, 0, copy);
             frameUrlCache.splice(currentFrameIndex + 1, 0, frameUrlCache[currentFrameIndex] || null);
             currentFrameIndex++;
@@ -1374,6 +1515,8 @@
         function deleteFrame() {
             if (isPlaying) stopPlaying();
             if (frames.length <= 1) { clearFrame(); return; }
+            saveCurrentFrame();
+            pushUndo({ type: 'delete', index: currentFrameIndex, image: frames[currentFrameIndex] });
             frames.splice(currentFrameIndex, 1);
             frameUrlCache.splice(currentFrameIndex, 1);
             if (currentFrameIndex >= frames.length) currentFrameIndex = frames.length - 1;

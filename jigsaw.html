@@ -358,7 +358,7 @@
             isSolved = false;
             selectedIdx = -1;
             const msgArea = document.getElementById('msg-area');
-            msgArea.innerText = window.t ? window.t('jigsaw.label.instruction') : "Tap pieces to swap them.";
+            msgArea.innerText = window.t ? window.t('jigsaw.label.instruction', 'Tap pieces to swap them.') : "Tap pieces to swap them.";
             msgArea.removeAttribute('data-i18n');
 
             imageUrl = generateArt();
@@ -429,7 +429,7 @@
             if (!silent) {
                 isSolved = true;
                 const msgArea = document.getElementById('msg-area');
-                msgArea.innerText = window.t ? window.t('jigsaw.msg.solved') : "Puzzle Solved!";
+                msgArea.innerText = window.t ? window.t('jigsaw.msg.solved', 'Puzzle Solved!') : "Puzzle Solved!";
                 msgArea.removeAttribute('data-i18n');
                 // Flash window content
                 const content = document.querySelector('.window');

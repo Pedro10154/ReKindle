@@ -362,7 +362,7 @@
             isGameOver = false;
 
             // Reset UI
-            const initialMsg = window.t ? window.t('hangman.status.guess') : "Guess a letter";
+            const initialMsg = window.t ? window.t('hangman.status.guess', 'Guess a letter') : "Guess a letter";
             document.getElementById('message-bar').innerText = initialMsg;
             document.getElementById('message-bar').removeAttribute('data-i18n');
             document.querySelectorAll('.part').forEach(el => el.classList.remove('visible'));
@@ -434,7 +434,7 @@
         function checkWin() {
             const isWon = currentWord.split('').every(l => guessedLetters.has(l));
             if (isWon) {
-                const winMsg = window.t ? window.t('hangman.msg.win') : "You Survived!";
+                const winMsg = window.t ? window.t('hangman.msg.win', 'You Survived!') : "You Survived!";
                 document.getElementById('message-bar').innerText = winMsg;
                 isGameOver = true;
             }
@@ -443,7 +443,7 @@
         function checkLoss() {
             if (mistakes >= MAX_MISTAKES) {
                 const loseMsg = window.t ?
-                    window.t('hangman.msg.lose').replace('${word}', currentWord) :
+                    window.t('hangman.msg.lose', 'Game Over: ${word}').replace('${word}', currentWord) :
                     "Game Over: " + currentWord;
                 document.getElementById('message-bar').innerText = loseMsg;
                 // Reveal all parts

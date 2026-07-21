@@ -1660,14 +1660,17 @@
 
         function floodFill(startRow, startCol, newValue) {
             const targetValue = grid[startRow][startCol];
-            if (targetValue === newValue) return;
+            const tolerance = 0.05; // Treat visually-identical shades as the same region
+            // If the new shade is within tolerance of the target, filling is a no-op
+            // (and this guard also prevents filled cells from re-matching forever).
+            if (Math.abs(targetValue - newValue) <= tolerance) return;
             const stack = [[startRow, startCol]];
             while (stack.length > 0) {
                 const pos = stack.pop();
                 const r = pos[0];
                 const c = pos[1];
                 if (r < 0 || r >= gridSize || c < 0 || c >= gridSize) continue;
-                if (grid[r][c] !== targetValue) continue;
+                if (Math.abs(grid[r][c] - targetValue) > tolerance) continue;
                 grid[r][c] = newValue;
                 drawPixel(r, c, newValue);
                 stack.push([r - 1, c]);

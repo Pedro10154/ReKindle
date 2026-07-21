@@ -285,7 +285,7 @@
             <div class="controls">
                 <button class="sys-btn" id="btn-easy" onclick="setDifficulty('easy')" data-i18n="tictactoe.difficulty.easy">Easy</button>
                 <button class="sys-btn" id="btn-hard" onclick="setDifficulty('hard')" data-i18n="tictactoe.difficulty.hard">Hard</button>
-                <button class="sys-btn" onclick="toggleMode()" id="mode-btn" data-i18n="connect4.btn.mode" data-i18n-args="{&quot;num&quot;: 4}">Mode: 4</button>
+                <button class="sys-btn" onclick="toggleMode()" id="mode-btn">Mode: 4</button>
                 <button class="sys-btn" onclick="resetGame()" data-i18n="connect4.btn.restart">Restart</button>
             </div>
         </div>
@@ -361,7 +361,7 @@
                 document.querySelector('.title-text').innerText = title5;
             }
             const modeBtn = document.getElementById('mode-btn');
-            const template = window.t ? window.t('connect4.btn.mode') : "Mode: ${num}";
+            const template = window.t ? window.t('connect4.btn.mode', 'Mode: ${num}') : "Mode: ${num}";
             modeBtn.innerText = template.replace('${num}', num);
             initGame();
         }

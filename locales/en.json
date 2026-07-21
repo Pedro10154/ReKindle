@@ -984,6 +984,8 @@
   "flipbook.tool.eraser": "Eraser",
   "flipbook.tool.fill": "Fill",
   "flipbook.tool.pen": "Pen",
+  "flipbook.tool.redo": "Redo",
+  "flipbook.tool.undo": "Undo",
   "flipbook.transport.next": "Next Frame",
   "flipbook.transport.play": "Play/Stop",
   "flipbook.transport.prev": "Previous Frame",
