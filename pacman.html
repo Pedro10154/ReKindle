@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+    <meta charset="UTF-8">
+
+    <title>Pac-Man</title>
+
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="js/i18n.js"></script>
+
+    <style>
+        /* SYSTEM 7 AESTHETICS */
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --border: 2px solid #000000;
+            --shadow: 4px 4px 0px #000000;
+            --stripe-pattern: repeating-linear-gradient(0deg, transparent, transparent 2px, #000 3px, #000 4px);
+        }
+
+        * {
+            transition: none !important;
+            animation: none !important;
+        }
+
+        body {
+            image-rendering: -webkit-crisp-edges;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -o-crisp-edges;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            -ms-interpolation-mode: nearest-neighbor;
+            background-repeat: repeat;
+            background-position: top left;
+
+            image-rendering: -webkit-optimize-contrast;
+            background-repeat: repeat;
+            background-position: top left;
+
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            background-color: #e5e5e5;
+
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+
+        /* WINDOW FRAME */
+        .window {
+            background: white;
+            border: 2px solid black;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            min-height: fit-content;
+            width: 100%;
+            max-width: 500px;
+            position: relative;
+        }
+
+        /* TITLE BAR */
+        .title-bar {
+            height: 35px;
+            border-bottom: 2px solid black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            padding: 0 10px;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .title-stripes {
+            position: absolute;
+            top: 4px;
+            bottom: 4px;
+            left: 4px;
+            right: 4px;
+            background-image: var(--stripe-pattern);
+            z-index: 0;
+        }
+
+        .title-text {
+            background: white;
+            padding: 0 15px;
+            font-weight: bold;
+            z-index: 1;
+            font-size: 1.1rem;
+            display: inline-flex;
+            align-items: center;
+            height: 100%;
+            box-sizing: border-box;
+        }
+
+        .close-box {
+            position: absolute;
+            left: 10px;
+            width: 18px;
+            height: 18px;
+            border: 2px solid black;
+            background: white;
+            z-index: 2;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-family: sans-serif;
+            font-size: 0.9rem;
+            line-height: 1;
+            box-shadow: 2px 2px 0 black;
+        }
+
+        .close-box:active {
+            background: black;
+            color: white;
+            transform: translate(1px, 1px);
+            box-shadow: none;
+        }
+
+        /* LEADERBOARD BUTTON */
+        .leaderboard-btn {
+            position: absolute;
+            right: 10px;
+            z-index: 2;
+            cursor: pointer;
+            background: white;
+            border: 2px solid black;
+            padding: 2px 8px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            box-shadow: 2px 2px 0 black;
+            font-family: inherit;
+            text-transform: uppercase;
+        }
+
+        .leaderboard-btn:active {
+            background: black;
+            color: white;
+            box-shadow: none;
+            transform: translate(2px, 2px);
+        }
+
+        /* GAME CONTENT */
+        .window-content {
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: white;
+        }
+
+        /* SCORE BOARD */
+        .score-board {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 320px;
+            margin-bottom: 10px;
+            font-family: "Courier New", monospace;
+            font-weight: bold;
+            font-size: 0.95rem;
+            border-bottom: 2px solid black;
+            padding-bottom: 5px;
+        }
+
+        canvas {
+            border: 4px solid black;
+            background-color: #fff;
+            display: block;
+            image-rendering: pixelated;
+        }
+
+        /* D-PAD CONTROLS */
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+            width: 100%;
+            max-width: 200px;
+        }
+
+        .ctrl-btn {
+            width: 100%;
+            height: 56px;
+            background: white;
+            border: 2px solid black;
+            font-size: 1.5rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 3px 3px 0 black;
+            border-radius: 6px;
+            user-select: none;
+            box-sizing: border-box;
+        }
+
+        .ctrl-btn:active {
+            background: black;
+            color: white;
+            transform: translate(2px, 2px);
+            box-shadow: none;
+        }
+
+        .btn-up {
+            grid-column: 2;
+            grid-row: 1;
+        }
+
+        .btn-left {
+            grid-column: 1;
+            grid-row: 2;
+        }
+
+        .btn-down {
+            grid-column: 2;
+            grid-row: 2;
+        }
+
+        .btn-right {
+            grid-column: 3;
+            grid-row: 2;
+        }
+
+        /* MODALS */
+        #game-over,
+        #leaderboard-modal,
+        #start-game-modal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border: 4px double black;
+            padding: 20px;
+            text-align: center;
+            display: none;
+            z-index: 10;
+            width: 80%;
+            max-width: 300px;
+            box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        .sys-btn {
+            background: white;
+            border: 2px solid black;
+            padding: 5px 15px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 2px 2px 0 black;
+            margin-top: 10px;
+            text-transform: uppercase;
+        }
+
+        .sys-btn:active {
+            background: black;
+            color: white;
+            box-shadow: none;
+            transform: translate(2px, 2px);
+        }
+
+        /* Leaderboard List */
+        .lb-list {
+            text-align: left;
+            margin-top: 10px;
+            margin-bottom: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+        }
+
+        .lb-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+            font-family: "Courier New", monospace;
+            font-size: 0.9rem;
+        }
+
+        .lb-row.me {
+            background: black;
+            color: white;
+        }
+
+        /* Override global scaling - only scale title-bar */
+        .window {
+            zoom: 1 !important;
+            transform: none !important;
+        }
+
+        .title-bar {
+            zoom: var(--rekindle-scale, 1);
+        }
+
+        @supports not (zoom: 1) {
+            .title-bar {
+                transform: scale(var(--rekindle-scale, 1));
+                transform-origin: top center;
+            }
+        }
+    </style>
+    <script src="theme.js?v=18"></script>
+</head>
+
+<body>
+
+    <div class="window">
+        <div class="title-bar">
+            <div class="title-stripes"></div>
+            <div class="close-box" onclick="window.location.href='index'">X</div>
+            <span class="title-text" data-i18n="pacman.title">Pac-Man</span>
+            <button class="leaderboard-btn" onclick="openLeaderboard()"
+                data-i18n="pacman.btn.leaderboard">Leaderboard</button>
+        </div>
+
+        <div class="window-content">
+            <div class="score-board">
+                <span><span data-i18n="pacman.label.score">Score</span>: <span id="score">0</span></span>
+                <span><span data-i18n="pacman.label.high_score">High</span>: <span id="high-score">0</span></span>
+                <span><span data-i18n="pacman.label.lives">Lives</span>: <span id="lives">3</span></span>
+            </div>
+
+            <canvas id="gameCanvas" width="304" height="336"></canvas>
+
+            <div class="controls">
+                <div class="ctrl-btn btn-up" onpointerdown="handleInput('ArrowUp', event)">&#9650;</div>
+                <div class="ctrl-btn btn-left" onpointerdown="handleInput('ArrowLeft', event)">&#9664;</div>
+                <div class="ctrl-btn btn-down" onpointerdown="handleInput('ArrowDown', event)">&#9660;</div>
+                <div class="ctrl-btn btn-right" onpointerdown="handleInput('ArrowRight', event)">&#9654;</div>
+            </div>
+        </div>
+
+        <div id="game-over">
+            <h2 data-i18n="pacman.label.game_over">GAME OVER</h2>
+            <p><span data-i18n="pacman.label.score">Score</span>: <span id="final-score">0</span></p>
+            <button class="sys-btn" onclick="startGame()" data-i18n="pacman.btn.retry">Retry</button>
+        </div>
+
+        <div id="start-game-modal" style="display: block;">
+            <h2 data-i18n="pacman.label.ready">Ready to Play?</h2>
+            <!-- Button is disabled until initGame is fully complete -->
+            <button class="sys-btn" onclick="startGame()" disabled data-i18n="pacman.status.loading">Loading...</button>
+        </div>
+
+        <div id="leaderboard-modal">
+            <h3 data-i18n="pacman.label.top_players">Top Players</h3>
+            <div class="lb-list" id="lb-content" data-i18n="pacman.status.loading">
+                Loading...
+            </div>
+            <button class="sys-btn" onclick="document.getElementById('leaderboard-modal').style.display='none'"
+                data-i18n="pacman.btn.close">Close</button>
+        </div>
+    </div>
+
+    <script>
+        // --- FIREBASE CONFIG ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyDY7x7vVmlYUyVZNLuCCmIQYa6PWFVfZqQ",
+            authDomain: "rekindle-dd1fa.firebaseapp.com",
+            projectId: "rekindle-dd1fa",
+            storageBucket: "rekindle-dd1fa.firebasestorage.app",
+            messagingSenderId: "748026882518",
+            appId: "1:748026882518:web:6877dd4329318070c11c77"
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        } else {
+            firebase.app();
+        }
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        // --- USER STATE ---
+        let uid = null;
+        let username = "Guest";
+        let personalHighScore = 0;
+
+        // --- MAZE ---
+        // # wall, . pellet, o power pellet, - ghost door, space = empty path, P = pacman start
+        const MAZE_SOURCE = [
+            '###################',
+            '#........#........#',
+            '#o##.###.#.###.##o#',
+            '#.................#',
+            '#.##.#.#####.#.##.#',
+            '#....#...#...#....#',
+            '####.###.#.###.####',
+            '####.#.......#.####',
+            '####.#.##-##.#.####',
+            '   ....#   #....   ',
+            '####.#.#####.#.####',
+            '####.#...#...#.####',
+            '####.###.#.###.####',
+            '#........#........#',
+            '#.##.###.#.###.##.#',
+            '#o.#.....P.....#.o#',
+            '##.#.#.#####.#.#.##',
+            '#....#...#...#....#',
+            '#.######.#.######.#',
+            '#.................#',
+            '###################'
+        ];
+
+        const COLS = 19;
+        const ROWS = 21;
+        const TILE = 16;
+        const HALF = TILE / 2;
+        const WIDTH = COLS * TILE;
+        const HEIGHT = ROWS * TILE;
+        const TUNNEL_ROW = 9;
+        const DOOR_TX = 9;
+        const DOOR_TY = 8;
+
+        const DIRS = {
+            up: { x: 0, y: -1 },
+            down: { x: 0, y: 1 },
+            left: { x: -1, y: 0 },
+            right: { x: 1, y: 0 }
+        };
+        const DIR_LIST = [DIRS.up, DIRS.left, DIRS.down, DIRS.right];
+
+        // --- GAME STATE ---
+        let canvas, ctx, mazeCanvas;
+        let maze = []; // per-level mutable pellet grid
+        let pelletsLeft = 0;
+        let score = 0;
+        let lives = 3;
+        let level = 1;
+        let state = 'idle'; // idle, ready, playing, dying, clear, gameover
+        let stateTimer = 0;
+        let frightTimer = 0;
+        let ghostCombo = 0;
+        let modeIndex = 0; // index into MODE_SCHEDULE
+        let modeTimer = 0;
+        let lastTime = 0;
+        let animTime = 0;
+        let floaters = []; // floating score texts
+
+        const MODE_SCHEDULE = [
+            { mode: 'scatter', time: 7 },
+            { mode: 'chase', time: 20 },
+            { mode: 'scatter', time: 7 },
+            { mode: 'chase', time: 20 },
+            { mode: 'scatter', time: 5 },
+            { mode: 'chase', time: 999999 }
+        ];
+
+        let pacman = null;
+        let ghosts = [];
+
+        function isHouseTile(tx, ty) {
+            return ty === TUNNEL_ROW && tx >= 8 && tx <= 10;
+        }
+
+        function tileChar(tx, ty) {
+            if (ty < 0 || ty >= ROWS) return '#';
+            if (tx < 0 || tx >= COLS) return ty === TUNNEL_ROW ? ' ' : '#';
+            return MAZE_SOURCE[ty][tx];
+        }
+
+        function canWalk(tx, ty, allowDoor) {
+            const c = tileChar(tx, ty);
+            if (c === '#') return false;
+            if (c === '-') return !!allowDoor;
+            if (isHouseTile(tx, ty)) return !!allowDoor;
+            return true;
+        }
+
+        function centerOf(tx, ty) {
+            return { x: tx * TILE + HALF, y: ty * TILE + HALF };
+        }
+
+        // --- ENTITY SETUP ---
+        function makePacman() {
+            const c = centerOf(9, 15);
+            return {
+                x: c.x, y: c.y,
+                dir: { x: -1, y: 0 },
+                face: { x: -1, y: 0 },
+                buffered: null
+            };
+        }
+
+        function makeGhosts() {
+            const b = centerOf(9, 7);
+            return [
+                { name: 'blinky', x: b.x, y: b.y, dir: { x: -1, y: 0 }, state: 'active', scatter: { x: 17, y: 1 }, releaseAt: 0, bobDir: 1 },
+                { name: 'pinky', x: centerOf(9, 9).x, y: centerOf(9, 9).y, dir: { x: 0, y: 0 }, state: 'house', scatter: { x: 1, y: 1 }, releaseAt: 1000, bobDir: 1 },
+                { name: 'inky', x: centerOf(8, 9).x, y: centerOf(8, 9).y, dir: { x: 0, y: 0 }, state: 'house', scatter: { x: 17, y: 19 }, releaseAt: 4000, bobDir: -1 },
+                { name: 'clyde', x: centerOf(10, 9).x, y: centerOf(10, 9).y, dir: { x: 0, y: 0 }, state: 'house', scatter: { x: 1, y: 19 }, releaseAt: 8000, bobDir: 1 }
+            ];
+        }
+
+        function resetPositions() {
+            pacman = makePacman();
+            ghosts = makeGhosts();
+            frightTimer = 0;
+            ghostCombo = 0;
+            modeIndex = 0;
+            modeTimer = 0;
+            houseElapsed = 0;
+        }
+
+        let houseElapsed = 0;
+
+        function buildMaze() {
+            maze = [];
+            pelletsLeft = 0;
+            for (let y = 0; y < ROWS; y++) {
+                const row = [];
+                for (let x = 0; x < COLS; x++) {
+                    const c = MAZE_SOURCE[y][x];
+                    row.push(c);
+                    if (c === '.' || c === 'o') pelletsLeft++;
+                }
+                maze.push(row);
+            }
+            renderMazeLayer();
+        }
+
+        // --- SPEED ---
+        function pacSpeed() { return 78 + level * 4; }
+        function ghostSpeed() { return 68 + level * 3; }
+        function frightSpeed() { return 46; }
+        function eyesSpeed() { return 160; }
+
+        // --- INIT ---
+        window.addEventListener('pageshow', function (event) {
+            initializePage();
+        });
+
+        function initializePage() {
+            const onAuthReady = new Promise((resolve) => {
+                if (auth.currentUser) {
+                    uid = auth.currentUser.uid;
+                    username = auth.currentUser.email.split('@')[0];
+                    return resolve();
+                }
+                const unsubscribe = auth.onAuthStateChanged(user => {
+                    if (user) {
+                        uid = user.uid;
+                        username = user.email.split('@')[0];
+                    }
+                    unsubscribe();
+                    return resolve();
+                });
+            });
+
+            onAuthReady.then(() => {
+                initGame();
+            });
+        }
+
+        function initGame() {
+            if (window.rekindleApplyWallpaper) window.rekindleApplyWallpaper();
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            document.addEventListener('keydown', (e) => handleInput(e.key));
+
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            window.addEventListener('orientationchange', resizeCanvas);
+            window.addEventListener('load', resizeCanvas);
+            setTimeout(resizeCanvas, 100);
+            setTimeout(resizeCanvas, 500);
+
+            buildMaze();
+            resetPositions();
+            draw();
+
+            loadPersonalHighScore().then(() => {
+                const startButton = document.querySelector('#start-game-modal .sys-btn');
+                startButton.disabled = false;
+                startButton.innerText = window.t ? window.t('pacman.btn.start') : "Start Game";
+                startButton.removeAttribute('data-i18n');
+            });
+
+            requestAnimationFrame(loop);
+        }
+
+        function resizeCanvas() {
+            if (!canvas) return;
+            const win = document.querySelector('.window');
+            const content = document.querySelector('.window-content');
+            const maxW = Math.min(content.clientWidth - 30, 380);
+            const maxWindowH = Math.floor(window.innerHeight * 0.95);
+            const othersH = win.offsetHeight - canvas.offsetHeight;
+            let w = Math.floor(Math.min(maxW, maxWindowH - othersH - 8));
+            if (w < 200) w = 200;
+            canvas.style.width = w + 'px';
+            canvas.style.height = Math.floor(w * HEIGHT / WIDTH) + 'px';
+        }
+
+        function startGame() {
+            document.getElementById('start-game-modal').style.display = 'none';
+            document.getElementById('game-over').style.display = 'none';
+            score = 0;
+            lives = 3;
+            level = 1;
+            document.getElementById('score').innerText = score;
+            document.getElementById('lives').innerText = lives;
+            buildMaze();
+            resetPositions();
+            state = 'ready';
+            stateTimer = 1600;
+        }
+
+        // --- HIGHSCORE LOGIC ---
+        async function loadPersonalHighScore() {
+            const localHigh = localStorage.getItem('pacman_highscore');
+            if (localHigh) personalHighScore = parseInt(localHigh);
+
+            if (uid) {
+                try {
+                    const doc = await db.collection('leaderboard_pacman').doc(uid).get();
+                    if (doc.exists) {
+                        const cloudHigh = doc.data().score;
+                        if (cloudHigh > personalHighScore) {
+                            personalHighScore = cloudHigh;
+                            localStorage.setItem('pacman_highscore', cloudHigh);
+                        }
+                    }
+                } catch (e) { console.error(e); }
+            }
+            document.getElementById('high-score').innerText = personalHighScore;
+        }
+
+        async function saveHighScore(newScore) {
+            if (newScore > personalHighScore) {
+                personalHighScore = newScore;
+                document.getElementById('high-score').innerText = personalHighScore;
+                localStorage.setItem('pacman_highscore', personalHighScore);
+
+                if (uid) {
+                    db.collection('leaderboard_pacman').doc(uid).set({
+                        username: username,
+                        score: newScore,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(text));
+            return div.innerHTML;
+        }
+
+        // --- LEADERBOARD UI ---
+        async function openLeaderboard() {
+            const modal = document.getElementById('leaderboard-modal');
+            modal.style.display = 'block';
+            const list = document.getElementById('lb-content');
+            list.innerText = window.t ? window.t('pacman.status.loading') : 'Loading...';
+            list.removeAttribute('data-i18n');
+
+            const user = auth.currentUser;
+            if (user) {
+                try {
+                    const snapshot = await db.collection('leaderboard_pacman')
+                        .orderBy('score', 'desc')
+                        .limit(10)
+                        .get();
+
+                    list.innerHTML = '';
+                    if (snapshot.empty) {
+                        list.innerText = window.t ? window.t('pacman.status.no_scores') : "No scores yet!";
+                        return;
+                    }
+                    let rank = 1;
+
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        const isMe = (doc.id === user.uid);
+                        const div = document.createElement('div');
+                        div.className = `lb-row ${isMe ? 'me' : ''}`;
+
+                        const rankSpan = document.createElement('span');
+                        rankSpan.textContent = `${rank}. ${escapeHtml(data.username)}`;
+                        const scoreSpan = document.createElement('span');
+                        scoreSpan.textContent = data.score;
+
+                        div.appendChild(rankSpan);
+                        div.appendChild(scoreSpan);
+                        list.appendChild(div);
+                        rank++;
+                    });
+                } catch (e) {
+                    console.error("Error loading leaderboard:", e);
+                    list.innerText = window.t ? window.t('pacman.status.error_loading') : "Error loading scores.";
+                }
+            } else {
+                list.innerText = window.t ? window.t('pacman.status.login_required') : "Log in to see global scores.";
+            }
+        }
+
+        // --- INPUT ---
+        function handleInput(key, event) {
+            if (event) event.preventDefault();
+            if (!pacman) return;
+            if (key === 'ArrowUp' || key === 'w') pacman.buffered = DIRS.up;
+            else if (key === 'ArrowDown' || key === 's') pacman.buffered = DIRS.down;
+            else if (key === 'ArrowLeft' || key === 'a') pacman.buffered = DIRS.left;
+            else if (key === 'ArrowRight' || key === 'd') pacman.buffered = DIRS.right;
+        }
+
+        // --- GHOST AI ---
+        function ghostTarget(g) {
+            if (g.state === 'eyes') return { x: DOOR_TX, y: DOOR_TY };
+            if (frightTimer > 0) return null;
+            const mode = MODE_SCHEDULE[modeIndex].mode;
+            if (mode === 'scatter') return g.scatter;
+            const ptx = Math.floor(pacman.x / TILE);
+            const pty = Math.floor(pacman.y / TILE);
+            if (g.name === 'blinky') return { x: ptx, y: pty };
+            if (g.name === 'pinky') {
+                return { x: ptx + pacman.dir.x * 4, y: pty + pacman.dir.y * 4 };
+            }
+            if (g.name === 'inky') {
+                return { x: ptx + pacman.dir.x * 2, y: pty + pacman.dir.y * 2 };
+            }
+            // clyde: chase when far, scatter when close
+            const gtx = Math.floor(g.x / TILE);
+            const gty = Math.floor(g.y / TILE);
+            const dist = Math.abs(gtx - ptx) + Math.abs(gty - pty);
+            return dist > 8 ? { x: ptx, y: pty } : g.scatter;
+        }
+
+        function decideGhost(g, tx, ty) {
+            if (g.state === 'eyes' && tx === DOOR_TX && ty === DOOR_TY) {
+                g.state = 'entering';
+                g.dir = { x: 0, y: 0 };
+                return;
+            }
+            const allowDoor = g.state === 'eyes';
+            const options = [];
+            for (let i = 0; i < DIR_LIST.length; i++) {
+                const d = DIR_LIST[i];
+                if (d.x === -g.dir.x && d.y === -g.dir.y) continue; // no reverse
+                if (canWalk(tx + d.x, ty + d.y, allowDoor)) options.push(d);
+            }
+            if (options.length === 0) {
+                g.dir = { x: -g.dir.x, y: -g.dir.y };
+                return;
+            }
+            if (frightTimer > 0 && g.state === 'active') {
+                g.dir = options[Math.floor(Math.random() * options.length)];
+                return;
+            }
+            const target = ghostTarget(g);
+            if (!target) {
+                g.dir = options[Math.floor(Math.random() * options.length)];
+                return;
+            }
+            let best = options[0];
+            let bestDist = Infinity;
+            for (let i = 0; i < options.length; i++) {
+                const nx = tx + options[i].x;
+                const ny = ty + options[i].y;
+                const dd = (nx - target.x) * (nx - target.x) + (ny - target.y) * (ny - target.y);
+                if (dd < bestDist) {
+                    bestDist = dd;
+                    best = options[i];
+                }
+            }
+            g.dir = best;
+        }
+
+        function reverseGhosts() {
+            for (let i = 0; i < ghosts.length; i++) {
+                const g = ghosts[i];
+                if (g.state === 'active') {
+                    g.dir = { x: -g.dir.x, y: -g.dir.y };
+                }
+            }
+        }
+
+        // --- MOVEMENT ---
+        function moveEntity(e, dt, speed, isGhost) {
+            const step = speed * dt;
+            if (e.dir.x === 0 && e.dir.y === 0) return;
+
+            const tx = Math.floor(e.x / TILE);
+            const ty = Math.floor(e.y / TILE);
+            const c = centerOf(tx, ty);
+
+            // Decide only when CROSSING the tile center (prevents re-snap loops)
+            let crossing = false;
+            if (e.dir.x > 0 && e.x <= c.x && e.x + step >= c.x) crossing = true;
+            else if (e.dir.x < 0 && e.x >= c.x && e.x - step <= c.x) crossing = true;
+            else if (e.dir.y > 0 && e.y <= c.y && e.y + step >= c.y) crossing = true;
+            else if (e.dir.y < 0 && e.y >= c.y && e.y - step <= c.y) crossing = true;
+
+            if (crossing) {
+                e.x = c.x;
+                e.y = c.y;
+                if (isGhost) decideGhost(e, tx, ty);
+                else decidePacman(tx, ty);
+            }
+
+            e.x += e.dir.x * step;
+            e.y += e.dir.y * step;
+
+            // Tunnel wrap
+            if (e.x < 0) e.x += WIDTH;
+            else if (e.x >= WIDTH) e.x -= WIDTH;
+        }
+
+        function decidePacman(tx, ty) {
+            if (pacman.buffered && canWalk(tx + pacman.buffered.x, ty + pacman.buffered.y, false)) {
+                pacman.dir = pacman.buffered;
+                pacman.face = pacman.buffered;
+                pacman.buffered = null;
+            } else if (!canWalk(tx + pacman.dir.x, ty + pacman.dir.y, false)) {
+                pacman.dir = { x: 0, y: 0 };
+            }
+        }
+
+        function retryStoppedPacman() {
+            if (pacman.dir.x === 0 && pacman.dir.y === 0 && pacman.buffered) {
+                decidePacman(Math.floor(pacman.x / TILE), Math.floor(pacman.y / TILE));
+            }
+        }
+
+        function updateHouseGhost(g, dt) {
+            if (g.state === 'house') {
+                // Bob up and down until released
+                g.y += g.bobDir * 20 * dt;
+                const c = centerOf(9, 9).y;
+                if (g.y > c + 3) { g.y = c + 3; g.bobDir = -1; }
+                if (g.y < c - 3) { g.y = c - 3; g.bobDir = 1; }
+                if (houseElapsed >= g.releaseAt) g.state = 'leaving';
+            } else if (g.state === 'leaving') {
+                const doorC = centerOf(DOOR_TX, DOOR_TY);
+                const exitC = centerOf(DOOR_TX, DOOR_TY - 1);
+                const step = ghostSpeed() * dt;
+                // Move horizontally to door column first
+                if (Math.abs(g.x - doorC.x) > step) {
+                    g.x += (doorC.x > g.x ? step : -step);
+                } else {
+                    g.x = doorC.x;
+                    g.y -= step;
+                    if (g.y <= exitC.y) {
+                        g.y = exitC.y;
+                        g.state = 'active';
+                        g.dir = Math.random() < 0.5 ? { x: -1, y: 0 } : { x: 1, y: 0 };
+                    }
+                }
+            } else if (g.state === 'entering') {
+                // Eyes reached door: sink back into house and revive
+                const home = centerOf(9, 9);
+                const step = eyesSpeed() * dt;
+                if (g.y < home.y) {
+                    g.y += step;
+                    if (g.y > home.y) g.y = home.y;
+                } else {
+                    g.y = home.y;
+                    g.state = 'leaving';
+                }
+            }
+        }
+
+        // --- GAME LOOP ---
+        function loop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            let dt = timestamp - lastTime;
+            lastTime = timestamp;
+            if (dt > 60) dt = 60; // clamp after tab switches
+            animTime += dt;
+
+            update(dt);
+            draw();
+
+            requestAnimationFrame(loop);
+        }
+
+        function update(dt) {
+            if (state === 'ready' || state === 'dying' || state === 'clear') {
+                stateTimer -= dt;
+                if (stateTimer <= 0) {
+                    if (state === 'dying') {
+                        lives--;
+                        document.getElementById('lives').innerText = lives;
+                        if (lives <= 0) {
+                            endGame();
+                            return;
+                        }
+                        resetPositions();
+                        state = 'ready';
+                        stateTimer = 1600;
+                    } else if (state === 'clear') {
+                        level++;
+                        buildMaze();
+                        resetPositions();
+                        state = 'ready';
+                        stateTimer = 1600;
+                    } else {
+                        state = 'playing';
+                    }
+                }
+                return;
+            }
+
+            if (state !== 'playing') return;
+
+            houseElapsed += dt;
+
+            // Mode schedule (scatter/chase) pauses during fright
+            if (frightTimer > 0) {
+                frightTimer -= dt;
+                if (frightTimer <= 0) {
+                    frightTimer = 0;
+                    ghostCombo = 0;
+                }
+            } else {
+                modeTimer += dt;
+                if (modeTimer >= MODE_SCHEDULE[modeIndex].time * 1000) {
+                    modeTimer = 0;
+                    if (modeIndex < MODE_SCHEDULE.length - 1) modeIndex++;
+                    reverseGhosts();
+                }
+            }
+
+            // Move pacman
+            retryStoppedPacman();
+            moveEntity(pacman, dt / 1000, pacSpeed(), false);
+            if (pacman.dir.x !== 0 || pacman.dir.y !== 0) pacman.face = pacman.dir;
+
+            // Eat pellets
+            const ptx = Math.floor(pacman.x / TILE);
+            const pty = Math.floor(pacman.y / TILE);
+            if (pty >= 0 && pty < ROWS && ptx >= 0 && ptx < COLS) {
+                const cell = maze[pty][ptx];
+                if (cell === '.' || cell === 'o') {
+                    maze[pty][ptx] = ' ';
+                    pelletsLeft--;
+                    if (cell === '.') {
+                        addScore(10);
+                    } else {
+                        addScore(50);
+                        frightTimer = Math.max(2500, 6500 - level * 500);
+                        ghostCombo = 0;
+                        reverseGhosts();
+                    }
+                    if (pelletsLeft <= 0) {
+                        state = 'clear';
+                        stateTimer = 2000;
+                        flashContent();
+                        return;
+                    }
+                }
+            }
+
+            // Move ghosts
+            for (let i = 0; i < ghosts.length; i++) {
+                const g = ghosts[i];
+                if (g.state === 'active') {
+                    const spd = frightTimer > 0 ? frightSpeed() : ghostSpeed();
+                    moveEntity(g, dt / 1000, spd, true);
+                } else if (g.state === 'eyes') {
+                    moveEntity(g, dt / 1000, eyesSpeed(), true);
+                    if (g.state === 'eyes') {
+                        const doorC = centerOf(DOOR_TX, DOOR_TY);
+                        if (Math.abs(g.x - doorC.x) < 4 && Math.abs(g.y - doorC.y) < 4) {
+                            g.x = doorC.x;
+                            g.y = doorC.y;
+                            g.state = 'entering';
+                        }
+                    }
+                } else {
+                    updateHouseGhost(g, dt / 1000);
+                }
+            }
+
+            // Collisions
+            for (let i = 0; i < ghosts.length; i++) {
+                const g = ghosts[i];
+                if (g.state !== 'active') continue;
+                const dx = g.x - pacman.x;
+                const dy = g.y - pacman.y;
+                if (dx * dx + dy * dy < 100) {
+                    if (frightTimer > 0) {
+                        const pts = 200 * Math.pow(2, ghostCombo);
+                        ghostCombo++;
+                        addScore(pts);
+                        g.state = 'eyes';
+                        floaters.push({ x: g.x, y: g.y, text: '' + pts, ttl: 1000 });
+                    } else {
+                        state = 'dying';
+                        stateTimer = 1200;
+                        flashContent();
+                        return;
+                    }
+                }
+            }
+
+            // Floaters
+            for (let i = floaters.length - 1; i >= 0; i--) {
+                floaters[i].ttl -= dt;
+                floaters[i].y -= 10 * dt / 1000;
+                if (floaters[i].ttl <= 0) floaters.splice(i, 1);
+            }
+        }
+
+        function addScore(pts) {
+            score += pts;
+            document.getElementById('score').innerText = score;
+        }
+
+        function flashContent() {
+            const content = document.querySelector('.window-content');
+            content.style.filter = "invert(1)";
+            setTimeout(() => { content.style.filter = "invert(0)"; }, 200);
+        }
+
+        function endGame() {
+            state = 'gameover';
+            saveHighScore(score);
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('game-over').style.display = 'block';
+        }
+
+        // --- RENDERING ---
+        function renderMazeLayer() {
+            if (!mazeCanvas) {
+                mazeCanvas = document.createElement('canvas');
+                mazeCanvas.width = WIDTH;
+                mazeCanvas.height = HEIGHT;
+            }
+            const m = mazeCanvas.getContext('2d');
+            m.fillStyle = 'white';
+            m.fillRect(0, 0, WIDTH, HEIGHT);
+            m.strokeStyle = 'black';
+            m.lineWidth = 2;
+
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    if (MAZE_SOURCE[y][x] !== '#') continue;
+                    // Only outline wall tiles that border a path
+                    let nearPath = false;
+                    for (let dy = -1; dy <= 1 && !nearPath; dy++) {
+                        for (let dx = -1; dx <= 1 && !nearPath; dx++) {
+                            const c = tileChar(x + dx, y + dy);
+                            if (c !== '#' && c !== undefined) nearPath = true;
+                        }
+                    }
+                    if (!nearPath) continue;
+                    m.strokeRect(x * TILE + 3, y * TILE + 3, TILE - 6, TILE - 6);
+                }
+            }
+
+            // Ghost house door
+            m.fillStyle = 'black';
+            m.fillRect(DOOR_TX * TILE + 2, DOOR_TY * TILE + HALF - 1, TILE - 4, 2);
+        }
+
+        function draw() {
+            if (!ctx) return;
+            ctx.drawImage(mazeCanvas, 0, 0);
+
+            // Pellets
+            ctx.fillStyle = 'black';
+            const blink = Math.floor(animTime / 300) % 2 === 0;
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    const c = maze[y] ? maze[y][x] : ' ';
+                    if (c === '.') {
+                        ctx.fillRect(x * TILE + HALF - 1.5, y * TILE + HALF - 1.5, 3, 3);
+                    } else if (c === 'o' && blink) {
+                        ctx.beginPath();
+                        ctx.arc(x * TILE + HALF, y * TILE + HALF, 5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+
+            if (state === 'dying') {
+                drawGhosts();
+                drawReadyText('!');
+                return;
+            }
+
+            drawPacman();
+            drawGhosts();
+            drawFloaters();
+
+            if (state === 'ready') {
+                drawReadyText(window.t ? window.t('pacman.label.ready') : 'READY!');
+            }
+        }
+
+        function drawReadyText(text) {
+            ctx.fillStyle = 'black';
+            ctx.font = 'bold 12px "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const c = centerOf(9, 11);
+            ctx.fillRect(c.x - 85, c.y - 10, 170, 20);
+            ctx.fillStyle = 'white';
+            ctx.fillText(text, c.x, c.y);
+            ctx.fillStyle = 'black';
+        }
+
+        function drawFloaters() {
+            ctx.font = 'bold 10px "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            for (let i = 0; i < floaters.length; i++) {
+                const f = floaters[i];
+                ctx.fillStyle = 'white';
+                ctx.fillRect(f.x - 12, f.y - 7, 24, 14);
+                ctx.fillStyle = 'black';
+                ctx.fillText(f.text, f.x, f.y);
+            }
+        }
+
+        function drawPacman() {
+            if (!pacman) return;
+            const mouthOpen = state === 'playing'
+                ? 0.05 + Math.abs(Math.sin(animTime / 90)) * 0.3
+                : 0.15;
+            let angle = 0;
+            if (pacman.face.x === 1) angle = 0;
+            else if (pacman.face.x === -1) angle = Math.PI;
+            else if (pacman.face.y === 1) angle = Math.PI / 2;
+            else if (pacman.face.y === -1) angle = -Math.PI / 2;
+
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.moveTo(pacman.x, pacman.y);
+            ctx.arc(pacman.x, pacman.y, 7, angle + mouthOpen * Math.PI, angle + (2 - mouthOpen) * Math.PI);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawGhosts() {
+            for (let i = 0; i < ghosts.length; i++) {
+                const g = ghosts[i];
+                if (g.state === 'eyes') {
+                    drawEyes(g);
+                } else if (frightTimer > 0 && g.state === 'active') {
+                    // Hollow (frightened) ghost; blinks when fright ending
+                    if (frightTimer < 2000 && Math.floor(animTime / 200) % 2 === 0) {
+                        drawGhostBody(g, true);
+                    } else {
+                        drawGhostBody(g, false);
+                    }
+                } else {
+                    drawGhostBody(g, true);
+                }
+            }
+        }
+
+        function drawGhostBody(g, filled) {
+            const x = g.x;
+            const y = g.y;
+            const r = g.name === 'clyde' ? 8 : 7;
+            ctx.beginPath();
+            ctx.arc(x, y - 1, r, Math.PI, 0);
+            ctx.lineTo(x + r, y + 5);
+            ctx.lineTo(x + r - 3, y + 2);
+            ctx.lineTo(x, y + 5);
+            ctx.lineTo(x - r + 3, y + 2);
+            ctx.lineTo(x - r, y + 5);
+            ctx.closePath();
+
+            if (filled) {
+                ctx.fillStyle = 'black';
+                ctx.fill();
+            } else {
+                ctx.fillStyle = 'white';
+                ctx.fill();
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            if (frightTimer > 0 && g.state === 'active') {
+                // Frightened face: two small black square eyes
+                ctx.fillStyle = filled ? 'white' : 'black';
+                ctx.fillRect(x - 4, y - 4, 3, 3);
+                ctx.fillRect(x + 1, y - 4, 3, 3);
+            } else {
+                drawEyes(g);
+                // Distinct marks per ghost (white on black body)
+                if (filled) {
+                    ctx.fillStyle = 'white';
+                    if (g.name === 'pinky') {
+                        // Bow
+                        ctx.beginPath();
+                        ctx.moveTo(x - 3, y - r + 1);
+                        ctx.lineTo(x, y - r + 4);
+                        ctx.lineTo(x - 3, y - r + 5);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.beginPath();
+                        ctx.moveTo(x + 3, y - r + 1);
+                        ctx.lineTo(x, y - r + 4);
+                        ctx.lineTo(x + 3, y - r + 5);
+                        ctx.closePath();
+                        ctx.fill();
+                    } else if (g.name === 'inky') {
+                        // Antenna
+                        ctx.fillRect(x - 1, y - r - 2, 2, 4);
+                    }
+                }
+            }
+        }
+
+        function drawEyes(g) {
+            const x = g.x;
+            const y = g.y;
+            const ox = g.dir ? g.dir.x : 0;
+            const oy = g.dir ? g.dir.y : 0;
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
+            // Two eyes
+            ctx.beginPath();
+            ctx.arc(x - 3, y - 3, 2.6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(x + 3, y - 3, 2.6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            // Pupils look toward movement direction
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(x - 3 + ox * 1.2, y - 3 + oy * 1.2, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x + 3 + ox * 1.2, y - 3 + oy * 1.2, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+    </script>
+
+    <script src="https://cdn.counter.dev/script.js" data-id="4e551911-0e5d-4c48-91a6-b828c3301675"
+        data-utcoffset="11"></script>
+</body>
+
+</html>

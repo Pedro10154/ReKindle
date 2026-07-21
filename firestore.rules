@@ -225,6 +225,15 @@ service cloud.firestore {
                       request.resource.data.score is number;
     }
 
+    // 4.0.1 PACMAN LEADERBOARD
+    match /leaderboard_pacman/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+                      request.auth.uid == userId &&
+                      isValidActionUsername(request.resource.data.username) &&
+                      request.resource.data.score is number;
+    }
+
     // 4.1 WORDLE LEADERBOARD
     match /leaderboard_wordle/{userId} {
       allow read: if request.auth != null;
