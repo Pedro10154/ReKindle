@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <!-- Escala travada para evitar zoom acidental no Kindle -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Anki - ReKindle</title>
+    <style>
+        /* Estilos otimizados para telas E-ink (preto e branco puro) */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #ffffff;
+            color: #000000;
+            font-family: sans-serif;
+            overflow: hidden;
+        }
+        #titlebar {
+            display: flex;
+            align-items: center;
+            height: 50px;
+            border-bottom: 2px solid #000000;
+            padding: 0 15px;
+            background-color: #ffffff;
+        }
+        .back-button {
+            text-decoration: none;
+            color: #000000;
+            font-size: 24px;
+            font-weight: bold;
+            margin-right: 15px;
+        }
+        .app-title {
+            font-size: 20px;
+            font-weight: bold;
+        }
+        #content {
+            width: 100%;
+            height: calc(100% - 52px);
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Barra superior padrão do ReKindle para poder voltar à página inicial -->
+    <div id="titlebar">
+        <a href="index.html" class="back-button">←</a>
+        <div class="app-title">AnkiWeb</div>
+    </div>
+    
+    <!-- Iframe que carrega o Anki diretamente dentro do site -->
+    <iframe id="content" src="https://ankiweb.net/" title="AnkiWeb"></iframe>
+</body>
+</html>
