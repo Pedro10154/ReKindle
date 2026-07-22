@@ -920,10 +920,13 @@ const APPS = [
             icon: '<rect x="3" y="13" width="13" height="13" fill="white" stroke="black" stroke-width="2"/><rect x="6" y="16" width="7" height="7" fill="black" stroke="none"/><path d="M18 26 L23 13 L28 26 Z" fill="white" stroke="black" stroke-width="2"/><line x1="1" y1="29" x2="31" y2="29" stroke="black" stroke-width="2"/>'
         } */
     {
-    name: "Anki",
-    icon: "🧠",
-    url: "anki.html"
-},
+        id: 'anki',
+        name: 'Anki',
+        cat: 'apps', 
+        single: true,
+        filled: true,
+        icon: '<polygon points="16,4 20,11 28,12 22,17 24,25 16,21 8,25 10,17 4,12 12,11" fill="black" stroke="none" />'
+    },
 ];
 
 // Helper function to check if games are disabled (used by index.html for filtering)
