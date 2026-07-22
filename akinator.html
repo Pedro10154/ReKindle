@@ -451,6 +451,308 @@
 
         var API_BASE = 'https://rekindle-akinator.timjarnott.workers.dev';
 
+        var CORS_PROXIES = [
+            { base: 'https://test.cors.workers.dev/?', encode: false },
+            { base: 'https://corsproxy.io/?url=', encode: true },
+            { base: 'https://api.codetabs.com/v1/proxy?quest=', encode: true }
+        ];
+
+        var activeTransport = null;
+
+        function regionInfo(region) {
+            var parts = String(region || 'en').split('_');
+            var sid = 1;
+            if (parts[1] === 'objects') sid = 2;
+            else if (parts[1] === 'animals') sid = 14;
+            return { baseUrl: 'https://' + parts[0] + '.akinator.com', sid: sid };
+        }
+
+        function buildForm(params) {
+            var parts = [];
+            for (var key in params) {
+                if (Object.prototype.hasOwnProperty.call(params, key)) {
+                    parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
+                }
+            }
+            return parts.join('&');
+        }
+
+        function extractFirst(text, patterns) {
+            var best = null;
+            for (var i = 0; i < patterns.length; i++) {
+                var flags = patterns[i].flags;
+                if (flags.indexOf('g') === -1) flags += 'g';
+                var regex = new RegExp(patterns[i].source, flags);
+                var match;
+                while ((match = regex.exec(text)) !== null) {
+                    if (match[1] && (!best || match[1].length > best.length)) {
+                        best = match[1];
+                    }
+                    if (match.index === regex.lastIndex) regex.lastIndex++;
+                }
+            }
+            return best;
+        }
+
+        function parseAnswerLabels(html) {
+            var ids = ['a_yes', 'a_no', 'a_dont_know', 'a_probably', 'a_probaly_not'];
+            var answers = [];
+            for (var i = 0; i < ids.length; i++) {
+                var regex = new RegExp("<a[^>]*id=[\"']" + ids[i] + "[\"'][^>]*>([\\s\\S]*?)<\\/a>", "i");
+                var match = html.match(regex);
+                var label = match && match[1] ? match[1].replace(/<[^>]*>/g, '').trim() : null;
+                answers.push(label || null);
+            }
+            return answers;
+        }
+
+        function fetchWithTimeout(url, options, ms) {
+            options = options || {};
+            var controller = null;
+            if (typeof AbortController === 'function') {
+                controller = new AbortController();
+                options.signal = controller.signal;
+            }
+            var timer = setTimeout(function () {
+                if (controller) controller.abort();
+            }, ms || 15000);
+            return fetch(url, options).then(function (res) {
+                clearTimeout(timer);
+                return res;
+            }, function (err) {
+                clearTimeout(timer);
+                throw err;
+            });
+        }
+
+        function proxyRequest(proxy, target, formBody) {
+            var url = proxy.base + (proxy.encode ? encodeURIComponent(target) : target);
+            return fetchWithTimeout(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formBody
+            }, 15000);
+        }
+
+        async function startViaProxy(proxy) {
+            var info = regionInfo(state.region);
+            var form = buildForm({ cm: state.childMode ? 'true' : 'false', sid: info.sid });
+            var res = await proxyRequest(proxy, info.baseUrl + '/game', form);
+            if (!res.ok) throw new Error('Proxy returned HTTP ' + res.status);
+            var html = await res.text();
+            var session = extractFirst(html, [
+                /session:\s*'([^']+)'/,
+                /session\s*[:=]\s*"([^"]+)"/,
+                /uid_ext_session\s*=\s*'([^']+)'/,
+                /id=["']session["'][^>]*value=["']([^"']+)["']/i,
+                /value=["']([^"']+)["'][^>]*id=["']session["']/i
+            ]);
+            var signature = extractFirst(html, [
+                /signature:\s*'([^']+)'/,
+                /signature\s*[:=]\s*"([^"]+)"/,
+                /id=["']signature["'][^>]*value=["']([^"']+)["']/i,
+                /value=["']([^"']+)["'][^>]*id=["']signature["']/i
+            ]);
+            var question = extractFirst(html, [
+                /<p[^>]*class=["'][^"']*question-text[^"']*["'][^>]*id=["']question-label["'][^>]*>([\s\S]*?)<\/p>/i,
+                /<[^>]*id=["']question-label["'][^>]*>([\s\S]*?)<\//i
+            ]);
+            if (!session || !signature || !question) {
+                throw new Error('Could not parse Akinator session via proxy');
+            }
+            return {
+                session: session,
+                signature: signature,
+                question: question.trim(),
+                baseUrl: info.baseUrl,
+                sid: info.sid,
+                answers: parseAnswerLabels(html)
+            };
+        }
+
+        async function actionViaProxy(proxy, endpoint, params) {
+            var info = regionInfo(state.region);
+            var res = await proxyRequest(proxy, info.baseUrl + endpoint, buildForm(params));
+            if (!res.ok) throw new Error('Proxy returned HTTP ' + res.status);
+            var text = await res.text();
+            var data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error('Akinator returned an unexpected response via proxy');
+            }
+            if (!data || typeof data !== 'object') {
+                throw new Error('Akinator returned an unexpected response via proxy');
+            }
+            return data;
+        }
+
+        async function startViaWorker() {
+            var res = await fetchWithTimeout(API_BASE + '/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ region: state.region, childMode: state.childMode })
+            }, 15000);
+            var data = await res.json().catch(function () { return null; });
+            if (!data || typeof data !== 'object') {
+                throw new Error(translate('akinator.error.network', 'Network error. Please try again.'));
+            }
+            if (!res.ok || data.error) {
+                throw new Error(data.error || translate('akinator.error.network', 'Network error. Please try again.'));
+            }
+            return data;
+        }
+
+        async function actionViaWorker(path, params) {
+            var body = {
+                region: state.region,
+                childMode: state.childMode,
+                session: state.session,
+                signature: state.signature
+            };
+            for (var key in params) {
+                if (Object.prototype.hasOwnProperty.call(params, key)) body[key] = params[key];
+            }
+            var res = await fetchWithTimeout(API_BASE + path, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            }, 15000);
+            var data = await res.json().catch(function () { return null; });
+            if (!data || typeof data !== 'object') {
+                throw new Error(translate('akinator.error.network', 'Network error. Please try again.'));
+            }
+            if (!res.ok || data.error) {
+                throw new Error(data.error || translate('akinator.error.network', 'Network error. Please try again.'));
+            }
+            return data;
+        }
+
+        function sameTransport(a, b) {
+            if (a.type !== b.type) return false;
+            if (a.type === 'worker') return true;
+            return a.proxy.base === b.proxy.base;
+        }
+
+        function getTransports() {
+            var list = [];
+            var i;
+            for (i = 0; i < CORS_PROXIES.length; i++) {
+                list.push({ type: 'proxy', proxy: CORS_PROXIES[i] });
+            }
+            list.push({ type: 'worker' });
+            if (activeTransport) {
+                for (i = 0; i < list.length; i++) {
+                    if (sameTransport(list[i], activeTransport)) {
+                        var preferred = list.splice(i, 1)[0];
+                        list.unshift(preferred);
+                        break;
+                    }
+                }
+            }
+            return list;
+        }
+
+        async function withTransport(fn) {
+            var transports = getTransports();
+            var lastErr = null;
+            for (var i = 0; i < transports.length; i++) {
+                try {
+                    var result = await fn(transports[i]);
+                    activeTransport = transports[i];
+                    return result;
+                } catch (e) {
+                    console.warn('Akinator transport failed (' + transports[i].type + '):', e.message || e);
+                    lastErr = e;
+                    if (activeTransport && sameTransport(activeTransport, transports[i])) {
+                        activeTransport = null;
+                    }
+                }
+            }
+            throw lastErr || new Error(translate('akinator.error.network', 'Network error. Please try again.'));
+        }
+
+        function apiStart() {
+            return withTransport(function (t) {
+                var p = t.type === 'worker' ? startViaWorker() : startViaProxy(t.proxy);
+                return p.then(function (data) {
+                    if (!data || !data.session || !data.signature || !data.question) {
+                        throw new Error('Invalid start response');
+                    }
+                    return data;
+                });
+            });
+        }
+
+        function apiAnswer(index) {
+            return withTransport(function (t) {
+                if (t.type === 'worker') {
+                    return actionViaWorker('/answer', {
+                        step: state.step,
+                        progression: state.progression,
+                        answer: index,
+                        stepLast: state.stepLast
+                    });
+                }
+                var info = regionInfo(state.region);
+                return actionViaProxy(t.proxy, '/answer', {
+                    step: state.step,
+                    progression: state.progression,
+                    sid: info.sid,
+                    cm: state.childMode ? 'true' : 'false',
+                    answer: index,
+                    step_last_proposition: state.stepLast || '',
+                    session: state.session,
+                    signature: state.signature
+                });
+            });
+        }
+
+        function apiBack() {
+            return withTransport(function (t) {
+                if (t.type === 'worker') {
+                    return actionViaWorker('/back', {
+                        step: state.step,
+                        progression: state.progression
+                    });
+                }
+                var info = regionInfo(state.region);
+                return actionViaProxy(t.proxy, '/cancel_answer', {
+                    step: state.step,
+                    progression: state.progression,
+                    sid: info.sid,
+                    cm: state.childMode ? 'true' : 'false',
+                    session: state.session,
+                    signature: state.signature
+                });
+            });
+        }
+
+        function apiContinue() {
+            return withTransport(function (t) {
+                if (t.type === 'worker') {
+                    return actionViaWorker('/continue', {
+                        step: state.step,
+                        progression: state.progression,
+                        stepLast: state.stepLast
+                    });
+                }
+                var info = regionInfo(state.region);
+                return actionViaProxy(t.proxy, '/exclude', {
+                    step: state.step,
+                    progression: state.progression,
+                    sid: info.sid,
+                    cm: state.childMode ? 'true' : 'false',
+                    session: state.session,
+                    signature: state.signature,
+                    forward_answer: '1'
+                });
+            });
+        }
+
         function showView(name) {
             views.start.classList.remove('active');
             views.game.classList.remove('active');
@@ -496,19 +798,7 @@
             setLoading(true);
 
             try {
-                var res = await fetch(API_BASE + '/start', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        region: state.region,
-                        childMode: state.childMode
-                    })
-                });
-
-                var data = await res.json();
-                if (!res.ok || data.error) {
-                    throw new Error(data.error || translate('akinator.error.network', 'Network error. Please try again.'));
-                }
+                var data = await apiStart();
 
                 state.session = data.session;
                 state.signature = data.signature;
@@ -563,26 +853,7 @@
             setLoading(true);
 
             try {
-                var res = await fetch(API_BASE + '/answer', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        region: state.region,
-                        childMode: state.childMode,
-                        step: state.step,
-                        progression: state.progression,
-                        answer: index,
-                        stepLast: state.stepLast,
-                        session: state.session,
-                        signature: state.signature
-                    })
-                });
-
-                var data = await res.json();
-                if (!res.ok || data.error) {
-                    throw new Error(data.error || translate('akinator.error.network', 'Network error. Please try again.'));
-                }
-
+                var data = await apiAnswer(index);
                 await handleResponse(data);
             } catch (e) {
                 console.error('Answer error:', e);
@@ -597,24 +868,7 @@
             setLoading(true);
 
             try {
-                var res = await fetch(API_BASE + '/back', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        region: state.region,
-                        childMode: state.childMode,
-                        step: state.step,
-                        progression: state.progression,
-                        session: state.session,
-                        signature: state.signature
-                    })
-                });
-
-                var data = await res.json();
-                if (!res.ok || data.error) {
-                    throw new Error(data.error || translate('akinator.error.network', 'Network error. Please try again.'));
-                }
-
+                var data = await apiBack();
                 updateFromStep(data);
             } catch (e) {
                 console.error('Back error:', e);
@@ -668,25 +922,7 @@
             setLoading(true);
 
             try {
-                var res = await fetch(API_BASE + '/continue', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        region: state.region,
-                        childMode: state.childMode,
-                        step: state.step,
-                        progression: state.progression,
-                        stepLast: state.stepLast,
-                        session: state.session,
-                        signature: state.signature
-                    })
-                });
-
-                var data = await res.json();
-                if (!res.ok || data.error) {
-                    throw new Error(data.error || translate('akinator.error.network', 'Network error. Please try again.'));
-                }
-
+                var data = await apiContinue();
                 await handleResponse(data);
             } catch (e) {
                 console.error('Continue error:', e);
